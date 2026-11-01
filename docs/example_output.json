@@ -1,0 +1,192 @@
+{
+    "id": "ab7fc63f75c7",
+    "created_at": 1793239346.7445757,
+    "batch_id": null,
+    "label": "Demo: synthetic photo, priced as Charizard ex 199/165 (151)",
+    "card": {
+        "id": "tcgdex:sv03.5-199",
+        "name": "Charizard ex",
+        "set": "151",
+        "number": "199",
+        "printed_total": 165,
+        "rarity": "Special illustration rare",
+        "image": "https://assets.tcgdex.net/en/sv/sv03.5/199/low.webp",
+        "raw_price": 324.63,
+        "raw_variant": "holofoil",
+        "raw_source": "TCGplayer market (via TCGdex)",
+        "raw_updated": "2026-10-14T22:55:09.651Z",
+        "raw_url": null,
+        "all_prices": {
+            "holofoil": {
+                "productId": 517045,
+                "lowPrice": 296,
+                "midPrice": 354.07,
+                "highPrice": 10000,
+                "marketPrice": 324.63,
+                "directLowPrice": 326.26
+            }
+        }
+    },
+    "result": {
+        "id": "ab7fc63f75c7",
+        "sides": {
+            "front": {
+                "centering": {
+                    "borders_px": {
+                        "left": 30.874855041503906,
+                        "right": 24.983592987060547,
+                        "top": 27.71996307373047,
+                        "bottom": 27.805147171020508
+                    },
+                    "lr": [
+                        55.3,
+                        44.7
+                    ],
+                    "tb": [
+                        49.9,
+                        50.1
+                    ],
+                    "worst": 55.3,
+                    "detection": "contour",
+                    "confidence": 1.0,
+                    "warnings": [],
+                    "lr_label": "55/45",
+                    "tb_label": "50/50"
+                }
+            },
+            "back": {
+                "centering": {
+                    "borders_px": {
+                        "left": 28.424835205078125,
+                        "right": 29.21328353881836,
+                        "top": 29.968963623046875,
+                        "bottom": 28.15888214111328
+                    },
+                    "lr": [
+                        49.3,
+                        50.7
+                    ],
+                    "tb": [
+                        51.6,
+                        48.4
+                    ],
+                    "worst": 51.6,
+                    "detection": "contour",
+                    "confidence": 1.0,
+                    "warnings": [],
+                    "lr_label": "49/51",
+                    "tb_label": "52/48"
+                }
+            }
+        },
+        "errors": [],
+        "llm": null,
+        "grade": {
+            "probs": {
+                "10": 0.18,
+                "9": 0.32,
+                "8": 0.24,
+                "7": 0.14,
+                "6": 0.12
+            },
+            "low": 7,
+            "high": 10,
+            "label": "PSA 7\u201310",
+            "ten_label": "10 possible",
+            "top": 10,
+            "assessed": false,
+            "centering_cap": {
+                "grade": 10,
+                "limiting": "front 55/45 (limit 60/40)",
+                "margin": 4.7,
+                "near_boundary": false
+            },
+            "condition_ceiling": null,
+            "condition_reason": "condition not assessed",
+            "explanation": [
+                "Centering allows at most a 10 (front 55/45 (limit 60/40)).",
+                "Corners, edges and surface were NOT assessed, so the range is wide and only reflects centering.",
+                "This is an estimate from photos. Photos hide surface flaws, and real grades often come in lower."
+            ]
+        },
+        "cost_usd": 0
+    },
+    "prices": {
+        "raw": 324.63,
+        "raw_source": "TCGplayer market (via TCGdex), holofoil, updated 2026-10-14T22:55:09.651Z",
+        "graded": {
+            "10": 1254.03,
+            "9": 352.5,
+            "8": 285.0,
+            "7": 228.0
+        },
+        "graded_source": "entered by you",
+        "tier": "priority",
+        "shipping": 8.0,
+        "sell_fee": 0.0,
+        "fee_override": null
+    },
+    "roi": {
+        "ok": true,
+        "verdict": "Marginal",
+        "reason": "Positive on average (+$53.59), but the grade comes back too low to cover the $87.99 cost 82% of the time. It only pays off with a top grade.",
+        "rows": [
+            {
+                "grade": 10,
+                "p": 0.18,
+                "price": 1254.03,
+                "source": "comp",
+                "contribution": 225.73
+            },
+            {
+                "grade": 9,
+                "p": 0.32,
+                "price": 352.5,
+                "source": "comp",
+                "contribution": 112.8
+            },
+            {
+                "grade": 8,
+                "p": 0.24,
+                "price": 285.0,
+                "source": "comp",
+                "contribution": 68.4
+            },
+            {
+                "grade": 7,
+                "p": 0.14,
+                "price": 228.0,
+                "source": "comp",
+                "contribution": 31.92
+            },
+            {
+                "grade": 6,
+                "p": 0.12,
+                "price": 228.0,
+                "source": "assumed \u2264 PSA 7",
+                "contribution": 27.36
+            }
+        ],
+        "ev_graded_gross": 466.21,
+        "ev_graded_net": 378.22,
+        "raw_net": 324.63,
+        "cost": 87.99,
+        "gain": 53.59,
+        "p_loss": 0.82,
+        "assumptions": [
+            "No comps entered for PSA 6; valued at the lower of the raw price and the next-higher grade's comp. Low grades often sell for less, so this may flatter grading."
+        ],
+        "warnings": [],
+        "missing": [],
+        "fee": 79.99,
+        "shipping": 8.0
+    },
+    "tier": {
+        "id": "priority",
+        "name": "Priority (formerly Regular)",
+        "fee": 79.99,
+        "max_declared_value": 1500,
+        "available": true,
+        "note": "Sources agree on $79.99"
+    }
+}

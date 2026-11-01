@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% from "_ui.html" import vchip %}
+{% block title %}Batch · {{ brand }}{% endblock %}
+{% block content %}
+<h1>Batch: which cards to grade first</h1>
+{% if ranked %}
+<p class="lede">Ranked by the chance of a 10, then the chance of a 9 or better. Open a card to add prices and see whether grading pays off. Ranking by grade alone ignores value.</p>
+<div class="panel"><div class="scroll"><table>
+<tr><th>#</th><th>Card</th><th>Verdict</th><th>Estimate</th><th class="num">P(10)</th><th class="num">P(≥9)</th><th>Centering (front)</th></tr>
+{% for c in ranked %}
+{% set g = c.result.grade %}
+<tr><td>{{ loop.index }}</td><td><a href="/check/{{ c.id }}">{{ c.label or "Unidentified card" }}</a></td>
+<td>{{ vchip(c.row) }}</td>
+{% if g %}
+<td>{{ g.label }}</td><td class="num">{{ (g.probs.get('10', 0))|pct }}</td>
+<td class="num">{{ ((g.probs.get('10', 0)) + (g.probs.get('9', 0)))|pct }}</td>
+<td>{{ c.result.sides.front.centering.lr_label }} · {{ c.result.sides.front.centering.tb_label }}</td>
+{% else %}<td colspan="4" class="soft">Couldn't read this photo: {{ c.result.errors|join("; ") }}</td>{% endif %}
+</tr>
+{% endfor %}
+</table></div></div>
+<a href="/batch">Start another batch</a>
+{% else %}
+<form class="panel" action="/batch" method="post" enctype="multipart/form-data" id="check-form">
+  <p class="soft">Upload up to 20 cards. Fronts and backs are paired by order, so select them in the same order (sorted by filename usually works).</p>
+  <label class="field" for="fronts">Front photos</label><input type="file" id="fronts" name="fronts" accept="image/*" multiple required>
+  <label class="field" for="backs">Back photos (optional)</label><input type="file" id="backs" name="backs" accept="image/*" multiple>
+  <p class="small soft">Each card makes two vision-model calls when a model is configured.</p>
+  <button class="primary wide" type="submit">Run batch <span class="spinner">…</span></button>
+</form>
+{% endif %}
+{% endblock %}

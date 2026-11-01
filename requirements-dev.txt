@@ -1,0 +1,4 @@
+-r requirements.txt
+pytest==9.2.0
+playwright  # scripts/e2e_camera.py (uses the system Chromium; no browser download needed)
+qrcode  # share.sh QR code

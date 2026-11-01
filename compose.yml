@@ -1,0 +1,14 @@
+services:
+  gradeorskip:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      - "8790:8790"
+    volumes:
+      - gradeorskip_data:/data
+
+volumes:
+  gradeorskip_data:

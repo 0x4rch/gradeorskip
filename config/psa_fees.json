@@ -1,0 +1,27 @@
+{
+  "_note": "Prices and caps come from PSA's own announcements, read as search excerpts on 2026-10-31. psacard.com's live pages sit behind a Cloudflare bot check, so re-check by hand if PSA announces a change. Super Express's cap comes from an older undated PSA page.",
+  "verified": true,
+  "verified_how": "PSA's announcements",
+  "as_of": "2026-10-31",
+  "official_source": "https://www.psacard.com/pricing",
+  "secondary_sources": [
+    "https://www.psacard.com/articles/articleview/15779/psa-reopens-value-service-level (Value $39.99 from 2026-10-29)",
+    "https://www.psacard.com/articles/articleview/15763/psa-new-standard-service-level (Standard, Priority, Premier)",
+    "https://www.psacard.com/articles/articleview/15663/grading-services-update-february-2026 (Express $199, $2,500 cap)",
+    "https://www.psacard.com/articles/articleview/15210/service-level-update-may-2026 (Super Express $349; Value tiers paused 2026-06-02)"
+  ],
+  "default_shipping_per_card": {
+    "value": 8.0,
+    "verified": false,
+    "note": "Rough placeholder for round-trip shipping + insurance amortized per card on a small submission. Not a PSA figure; edit it."
+  },
+  "tiers": [
+    {"id": "value_bulk", "name": "Value Bulk", "fee": 24.99, "max_declared_value": 500, "available": false, "note": "Paused since 2026-06-02; no reopening announced"},
+    {"id": "value", "name": "Value", "fee": 39.99, "max_declared_value": 500, "available": true, "note": "Est. 90 to 100 business days"},
+    {"id": "standard", "name": "Standard", "fee": 59.99, "max_declared_value": 1000, "available": true, "note": "Est. 70 to 80 business days"},
+    {"id": "priority", "name": "Priority (formerly Regular)", "fee": 79.99, "max_declared_value": 1500, "available": true, "note": "Est. 50 to 60 business days"},
+    {"id": "express", "name": "Express", "fee": 199.00, "max_declared_value": 2500, "available": true, "note": "Est. 20 to 30 business days"},
+    {"id": "super_express", "name": "Super Express", "fee": 349.00, "max_declared_value": 4999, "available": true, "note": "Price confirmed; the $4,999 cap is from an older PSA page"},
+    {"id": "premier", "name": "Premier (formerly Walk-Through)", "fee": 599.00, "max_declared_value": 10000, "available": true, "note": "Est. 7 to 10 business days"}
+  ]
+}

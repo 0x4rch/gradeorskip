@@ -1,0 +1,267 @@
+{% extends "base.html" %}
+{% from "_ui.html" import icon, vmark %}
+{% block title %}{{ c.label or "Check" }} · {{ brand }}{% endblock %}
+{% block content %}
+{% set g = grade %}
+{% set ident = r.identification %}
+{% set p = c.prices %}
+{% set vclass = {"Grade it": "v-grade", "Marginal": "v-marginal", "Don't grade": "v-dont"}.get(roi.verdict, "v-need") if roi else "v-need" %}
+{% set vlabel = ("Need graded prices" if roi.verdict == "Need prices" and roi.breakeven else roi.verdict) if roi else "No answer yet" %}
+{% set retake = [] %}
+{% for side in ["front", "back"] %}{% set s = r.sides.get(side) %}
+  {% if s and (s.error or (s.centering and s.centering.confidence < 0.6 and s.centering.verified is not sameas false) or (s.condition and not s.condition.result.image_usable)) %}{% set _ = retake.append(side) %}{% endif %}
+{% endfor %}
+
+{% if r.llm and r.llm.provider == "mock" %}<div class="notice err demo">DEMO MODE: condition findings come from the mock provider and are fake.</div>{% endif %}
+
+<div class="answer-layout">
+<section class="answer-card" aria-label="The card">
+  <div class="the-card">{% if card_image %}<img src="{{ card_image }}" alt="{{ c.label or 'Your card' }}">{% endif %}</div>
+</section>
+
+<div class="answer-main">
+<section class="answer" id="answer">
+  {# --- which card --- #}
+  <div class="card-id">
+    {% if c.card %}
+      <div class="card-name">{{ c.card.name }}</div>
+      <div class="small soft">{{ c.card.set }} · #{{ c.card.number }}{% if c.card.printed_total %}/{{ c.card.printed_total }}{% endif %}{% if c.card.raw_variant and variants|length <= 1 %} · {{ c.card.raw_variant|variant }}{% endif %}</div>
+    {% elif ident and ident.guess and ident.guess.name_printed %}
+      <div class="card-name">{{ ident.guess.name_printed }} {{ ident.guess.number }}</div>
+      <div class="small soft">{{ ident.note }}</div>
+    {% else %}
+      <div class="card-name">Unidentified card</div>
+      <div class="small soft">{{ ident.note if ident else "Search for it below to pull prices." }}</div>
+    {% endif %}
+  </div>
+  {# --- the answer --- #}
+  <h1 class="verdict {{ vclass }}">{{ vmark(vclass) }}{{ vlabel }}</h1>
+  <dl class="facts">
+    {% if roi and roi.ok %}
+    <div><dt>Expected gain</dt><dd class="{{ 'pos' if roi.gain >= 0 else 'neg' }}">{% if roi.gain >= 0 %}+${{ "%.0f"|format(roi.gain) }}{% else %}−${{ "%.0f"|format(-roi.gain) }}{% endif %}</dd></div>
+    <div><dt>Chance of a loss</dt><dd>{{ roi.p_loss|pct }}</dd></div>
+    {% endif %}
+    {% if g %}<div><dt>Estimated grade</dt><dd>{{ g.label }}</dd></div>{% endif %}
+  </dl>
+  {% if g %}<p class="small soft facts-note">{{ g.ten_label }}{% if not g.assessed %} · centering only{% endif %}{% if roi and roi.ok and not fees.verified %} · <a href="#prices" data-open="prices">fees unverified</a>{% endif %}</p>{% endif %}
+
+  {% if roi and not roi.ok %}<p class="reason">{{ roi.reason }}</p>{% endif %}
+  <details class="fixcard" id="fix" {% if not c.card or msg == "pick" %}open{% endif %}>
+    <summary>{{ "Not this card?" if c.card else "Find the card" }}</summary>
+  {% if msg == "pick" %}<div class="notice">Tap a card in the results first, then "Use this card".</div>{% endif %}
+  <input type="search" placeholder="Name and number, e.g. charizard 4/102" autocomplete="off" enterkeyhint="search"
+         data-card-search data-results="roi-results" data-target="roi-card-id"
+         value="{{ (ident.guess.name_en ~ ' ' ~ ident.guess.number) if ident and ident.guess and ident.guess.name_en else '' }}">
+  <ul class="results-list" id="roi-results"></ul>
+  <form method="post" action="/check/{{ c.id }}/card"><input type="hidden" name="card_id" id="roi-card-id"><button class="secondary wide" type="submit" disabled data-needs-card>Use this card</button></form>
+  </details>
+
+  {# --- anything that undermines those numbers sits right under them --- #}
+  {% set sleeved = [] %}
+  {% for side in ["front", "back"] %}{% set s = r.sides.get(side) %}
+    {% if s and s.condition and (s.condition.result.in_holder or (s.condition.result.image_issues|join(" ")|lower is search_any(["sleeve", "toploader", "top loader", "slab"]))) %}{% set _ = sleeved.append(side) %}{% endif %}
+  {% endfor %}
+  {% if sleeved %}
+  <div class="notice err small"><strong>Looks sleeved or in a holder,</strong> so this read is unreliable. <a href="/">Take it out and rescan</a></div>
+  {% elif retake %}
+  <div class="notice small">The {{ retake|join(" and ") }} photo wasn't ideal, so this read is less reliable. <a href="/">Retake</a></div>
+  {% endif %}
+  {% if c.card and c.card.printing_unconfirmed %}
+  <div class="notice err"><strong>This card looks stamped ({{ c.card.stamp }}).</strong> Stamped printings sell differently, and we couldn't match this one automatically. Pick it below.</div>
+  {% endif %}
+  {% if roi %}
+  {% if roi.verdict == "Need prices" and comps %}
+    <div class="links">{% for label, url in comps %}<a class="btn small-btn" href="{{ url }}" target="_blank" rel="noopener">{{ label }} {{ icon("out") }}</a>{% endfor %}</div>
+    <a href="#prices" class="small" data-open="prices">Enter the prices you find</a>
+  {% endif %}
+  {% for w in roi.warnings %}<div class="notice small">{{ w }}</div>{% endfor %}
+  {% endif %}
+
+  {# --- each reason opens the evidence behind it --- #}
+  <div class="rows">
+    {% if roi and roi.ok %}
+    <details class="row" id="math">
+      <summary><strong>The money</strong><span>{% if roi.verdict == "Grade it" %}Expected to beat selling raw{% elif roi.verdict == "Marginal" %}{{ "Pays off only with a top grade" if "top grade" in roi.reason else "Small gain for the cost" }}{% else %}Selling raw comes out ahead{% endif %}</span>{{ icon("chevron", "chev") }}</summary>
+      <div class="row-body">
+      <p>{{ roi.reason }}</p>
+  <div class="scroll"><table>
+    <tr><th>Outcome</th><th class="num">Chance</th><th class="num">Value</th><th class="num">Chance × value</th></tr>
+    {% for row in roi.rows %}
+    <tr><td>{{ grader.name }} {{ row.grade }}{% if row.source != "comp" %} <span class="chip">{{ row.source }}</span>{% endif %}</td><td class="num">{{ row.p|pct }}</td><td class="num">{{ row.price|money }}</td><td class="num">{{ row.contribution|money }}</td></tr>
+    {% endfor %}
+    <tr><td colspan="3"><strong>Expected graded value</strong></td><td class="num"><strong>{{ roi.ev_graded_gross|money }}</strong></td></tr>
+    {% if p.sell_fee %}<tr><td colspan="3">− selling fees ({{ p.sell_fee }}%)</td><td class="num">{{ (roi.ev_graded_gross * p.sell_fee / 100)|money }}</td></tr>{% endif %}
+    <tr><td colspan="3">− grading fee + shipping</td><td class="num">{{ roi.fee|money }} + {{ roi.shipping|money }}</td></tr>
+    <tr><td colspan="3"><strong>Net if graded</strong></td><td class="num"><strong>{{ roi.ev_graded_net|money }}</strong></td></tr>
+    <tr><td colspan="3"><strong>Net if sold raw</strong></td><td class="num"><strong>{{ roi.raw_net|money }}</strong></td></tr>
+    <tr><td colspan="3"><strong>Expected gain from grading</strong></td><td class="num"><strong>{{ roi.gain|money }}</strong></td></tr>
+    <tr><td colspan="3">Chance grading loses money</td><td class="num">{{ roi.p_loss|pct }}</td></tr>
+  </table></div>
+  {% for a in roi.assumptions %}<p class="small soft">Assumption: {{ a }}</p>{% endfor %}
+  <p class="small soft">Each grade's chance times its price. The chances are uncalibrated estimates, so treat this as a rough guide.</p>
+      </div>
+    </details>
+    {% endif %}
+    {% if g %}
+    <details class="row" id="centering">
+      <summary><strong>Centering</strong><span>{% if g.centering_cap.limiting.startswith("not measured") %}Not measured{% else %}Allows {{ grader.name }} {{ g.centering_cap.grade }} · {{ g.centering_cap.limiting.split(" (")[0] }}{% endif %}</span>{{ icon("chevron", "chev") }}</summary>
+      <div class="row-body">
+      {% if sleeved %}<div class="notice small">Plastic edges and glare get read as card edges and whitening, so centering and edge results here are unreliable.</div>{% endif %}
+  <p class="small soft">Measured with computer vision. Green is the card's cut edge, magenta the detected inner frame. If the lines are in the wrong place, the numbers are wrong too, so retake the photo.</p>
+  <div class="grid2">
+  {% for side in ["front", "back"] %}
+    {% set s = r.sides.get(side) %}
+    <div>
+      <h3>{{ side|capitalize }}</h3>
+      {% if s and s.centering %}
+        {% set cen = s.centering %}
+        {% if cen.confidence < 0.6 %}
+        {# A rejected read: its numbers are wrong by definition, so don't show them. #}
+        <div class="overlay"><img src="/files/{{ r.id }}/{{ side }}_card.jpg" alt="{{ side }} of the card" loading="lazy"></div>
+        <p class="small"><strong>Not measured.</strong>{% if cen.verified is sameas false %} Check this side by eye or with a centering tool. A better photo won't help if the art runs to the edge.{% else %} Retake it flat and straight-on.{% endif %}</p>
+        {% else %}
+        <div class="overlay"><img src="/files/{{ r.id }}/{{ side }}_overlay.jpg" alt="{{ side }} centering overlay" loading="lazy"></div>
+        <table class="small">
+          <tr><td>Left / right</td><td class="num"><strong>{{ cen.lr_label }}</strong></td></tr>
+          <tr><td>Top / bottom</td><td class="num"><strong>{{ cen.tb_label }}</strong></td></tr>
+          <tr><td>Measurement confidence</td><td class="num">{{ cen.confidence|pct }}</td></tr>
+          {% if cen.frames %}<tr><td>Burst frames</td><td class="num">median of {{ cen.frames.agree }}{% if cen.frames.agree != cen.frames.measured %} of {{ cen.frames.measured }}{% endif %} · ±{{ "%.1f"|format(cen.frames.spread / 2) }} pts</td></tr>{% endif %}
+        </table>
+        {% endif %}
+        {% for w in cen.warnings %}<div class="notice small">{{ w }}</div>{% endfor %}
+      {% elif s and s.error %}<div class="notice small">{{ s.error }}</div>
+      {% else %}<p class="soft">No {{ side }} photo.</p>{% endif %}
+    </div>
+  {% endfor %}
+  </div>
+  {% if g %}{% if g.centering_cap.limiting.startswith("not measured") %}<div class="notice small">Centering wasn't measured reliably, so it isn't limiting the estimate.</div>{% else %}<p class="small">Centering alone allows up to <strong>{{ grader.name }} {{ g.centering_cap.grade }}</strong>, limited by {{ g.centering_cap.limiting }}. Tolerances follow <a href="{{ grader.centering_source }}" rel="noopener">{{ grader.name }}'s published standards</a>.</p>{% endif %}{% endif %}
+      </div>
+    </details>
+    <details class="row" id="condition">
+      <summary><strong>Condition</strong><span>{% if g.condition_ceiling %}{{ g.condition_reason[:1]|upper }}{{ g.condition_reason[1:] }}{% else %}Not assessed, check it yourself{% endif %}</span>{{ icon("chevron", "chev") }}</summary>
+      <div class="row-body">
+  {% if not r.llm %}
+    <p class="soft">Not assessed: no vision model ran on this check. Check the corners, edges and surface yourself under a bright light.</p>
+  {% else %}
+  <p class="small soft">AI read ({{ r.llm.model }}). Red boxes mark what it saw. In our tests it caught obvious damage (edge tears, a scratched holo) but missed bends, dents, faint corner whitening and print lines, so check those yourself under a light held at an angle. "None" means nothing was visible, not that the card is flawless.</p>
+  <div class="grid2">
+  {% for side in ["front", "back"] %}
+    {% set s = r.sides.get(side) %}
+    {% if s and s.condition %}
+    {% set res = s.condition.result %}
+    <div>
+      <h3>{{ side|capitalize }}</h3>
+      <div class="overlay"><img src="/files/{{ r.id }}/{{ side }}_findings.jpg" alt="{{ side }} findings" loading="lazy"></div>
+      <table class="small">
+        {% for a in res.areas %}
+        <tr><td>{{ a.area|capitalize }}</td><td><span class="sev-{{ a.severity }}">{{ a.severity }}</span>{% if a.notes and a.severity != "none" %}: {{ a.notes }}{% endif %}</td><td class="num">{{ a.confidence|pct }}</td></tr>
+        {% endfor %}
+      </table>
+      {% if res.image_issues %}<p class="small soft">Photo issues: {{ res.image_issues|join("; ") }}</p>{% endif %}
+      {% if not res.image_usable %}<div class="notice small">The model says this photo isn't good enough for a reliable read.</div>{% endif %}
+    </div>
+    {% endif %}
+  {% endfor %}
+  </div>
+  {% endif %}
+      </div>
+    </details>
+    {% endif %}
+  </div>
+
+  {% if c.card and c.card.auto == "ambiguous" %}<div class="notice small">{{ ident.note }}</div>{% endif %}
+  
+  {% if variants|length > 1 and c.card %}
+  <form method="post" action="/check/{{ c.id }}/variant" class="variant-form">
+    <label class="field" for="variant">Printing</label>
+    <select id="variant" name="variant" data-autosubmit>
+      {% for key, price in variants %}<option value="{{ key }}" {% if key == current_variant %}selected{% endif %}>{{ key|variant }}: ${{ "%.2f"|format(price) }}</option>{% endfor %}
+    </select>
+  </form>
+  {% endif %}
+  {% if c.card and c.card.pc_options and c.card.pc_options|length > 1 %}
+  <form method="post" action="/check/{{ c.id }}/printing" class="variant-form">
+    <label class="field" for="printing">Printing{% if not c.card.printing_confirmed %} (check yours: stamps and variants change the price){% endif %}</label>
+    <select id="printing" name="slug" data-autosubmit>
+      {% for o in c.card.pc_options %}<option value="{{ o.slug }}" {% if o.slug == c.card.pc_slug %}selected{% endif %}>{{ o.label }}</option>{% endfor %}
+    </select>
+  </form>
+  {% endif %}
+  {% if msg == "printing" %}<div class="notice small">Couldn't load prices for that printing. Try again, or enter them below.</div>{% endif %}
+  {% if c.card and c.card.auto and variants|length > 1 %}<p class="small soft">Printing matters for price (1st Edition, Unlimited, Reverse Holo). Pick the right one if it's wrong.</p>{% endif %}
+
+  {# --- the service: the biggest lever in the math --- #}
+  {% if roi and tier_opts %}
+  <div class="service">
+    {% if graders %}<form method="post" action="/check/{{ c.id }}/grader" class="seg" aria-label="Grading company">
+      {% for o in graders %}<button type="submit" name="grader" value="{{ o.id }}" {% if o.id == grader.id %}class="on" aria-pressed="true"{% endif %}>{{ o.name }}</button>{% endfor %}
+    </form>{% endif %}
+    <div class="service-head"><strong>{{ grader.name }} service</strong>
+      <span class="soft small">fee per card{% if not fees.verified %} · <a href="#prices" data-open="prices">unverified</a>{% endif %} · + ${{ "%.0f"|format(roi.shipping) }} shipping</span></div>
+    <form method="post" action="/check/{{ c.id }}/tier" class="tiers">
+      {% for o in tier_opts %}
+      <button type="submit" name="tier" value="{{ o.id }}" class="tier{% if o.current %} on{% endif %}" {% if o.current %}aria-pressed="true"{% endif %}>
+        <span class="t-name">{{ o.name }}</span>
+        <span class="t-fee">${{ "%.2f"|format(o.fee) }}</span>
+        <span class="t-gain {{ 'pos' if o.gain is not none and o.gain >= 0 else 'neg' if o.gain is not none else '' }}">{% if o.gain is none %}need prices{% elif o.gain >= 0 %}+${{ "%.0f"|format(o.gain) }}{% else %}−${{ "%.0f"|format(-o.gain) }}{% endif %}</span>
+      </button>
+      {% endfor %}
+    </form>
+    {% if grader.id == "tag" %}<p class="small soft">A TAG 10 here means Gem Mint (55/45 front). Pristine needs about 51/49 front, 52/48 back.</p>{% endif %}
+    {% if roi.fee != tier.fee %}<p class="small soft">Using your fee override of ${{ "%.2f"|format(roi.fee) }}.</p>{% endif %}
+  </div>
+  {% endif %}
+
+  <div class="rows">
+    <details class="row" id="prices" {% if roi and not roi.ok %}open{% endif %}>
+      <summary><strong>Prices</strong><span>Raw and graded prices, fees</span>{{ icon("chevron", "chev") }}</summary>
+      <div class="row-body">
+  <form class="prices-form" method="post" action="/check/{{ c.id }}/prices">
+    <label class="field">Raw (ungraded) price</label>
+    <input type="text" name="raw" inputmode="decimal" value="{{ p.raw|amount }}" placeholder="$">
+    <div class="small soft">{{ (p.raw_source|isodates) or "No raw price yet. Enter one, or identify the card." }}</div>
+
+    <label class="field">Graded sold prices</label>
+    <div class="fields">
+      {% for gr in grades %}
+      <div><span class="small">{{ grader.name }} {{ gr }}</span><input type="text" inputmode="decimal" name="{{ grader.id }}{{ gr }}" value="{{ (active.graded or {}).get(gr|string, '')|amount if (active.graded or {}).get(gr|string, '') != '' else '' }}" placeholder="$"></div>
+      {% endfor %}
+    </div>
+    <div class="small soft">{{ active.graded_source }}</div>
+
+    <div class="fields" style="margin-top:8px">
+      <div class="span"><label class="field">Service tier</label>
+        <select name="tier">{% for t in fees.tiers if t.available %}<option value="{{ t.id }}" {% if t.id == tier.id %}selected{% endif %}>{{ t.name }}: ${{ "%.2f"|format(t.fee) }}</option>{% endfor %}</select></div>
+      <div><label class="field">Fee override</label><input type="text" name="fee_override" inputmode="decimal" value="{{ p.fee_override|amount }}" placeholder="tier fee"></div>
+      <div><label class="field">Shipping / card</label><input type="text" name="shipping" inputmode="decimal" value="{{ p.shipping|amount }}"></div>
+      <div><label class="field">Selling fees %</label><input type="text" name="sell_fee" inputmode="decimal" value="{{ p.sell_fee|amount }}"></div>
+    </div>
+    <p class="small soft">Fees from {{ fees.verified_how }}, checked {{ fees.as_of }}. {{ tier.note }}{% if tier.note %}. {% endif %}Shipping is a rough placeholder.</p>
+    <button type="submit" class="wide">Recalculate</button>
+  </form>
+      </div>
+    </details>
+    <details class="row">
+      <summary><strong>Details</strong><span>Grade chances and how this was read</span>{{ icon("chevron", "chev") }}</summary>
+      <div class="row-body">
+  {% if g %}<ul class="small">{% for line in g.explanation %}<li>{{ line }}</li>{% endfor %}</ul>
+  <div class="bars">
+  {% for k, v in g.probs.items() %}
+    <div class="bar"><span>{{ grader.name }} {{ k }}</span><span class="track"><span class="fill" style="width: {{ (v * 100)|round(1) }}%; display:block"></span></span><span class="num">{{ v|pct }}</span></div>
+  {% endfor %}
+  </div>
+  <p class="small soft">Rough weights per grade, not yet calibrated against real PSA results.</p>{% endif %}
+  {% for e in r.errors %}<p class="small soft">Note: {{ e }}</p>{% endfor %}
+  <p class="small soft">Checked {{ c.created_at|ts }}{% if r.cost_usd %} · model cost ≈ ${{ "%.3f"|format(r.cost_usd) }}{% endif %} · <a href="/api/check/{{ c.id }}">JSON</a></p>
+      </div>
+    </details>
+  </div>
+  <p class="small soft disclaimer">An estimate from photos, not a grade. Photos hide flaws; real grades often come in lower.</p>
+</section>
+
+<div class="next">
+  <a href="/" class="btn primary">Scan next card</a>
+</div>
+</div>
+</div>
+{% endblock %}

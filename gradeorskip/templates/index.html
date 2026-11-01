@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% from "_ui.html" import icon, check_list %}
+{% block content %}
+<div id="scan-app" class="home">
+  <section class="scan">
+    <h1>Is this card worth grading?</h1>
+    <p class="lede">Scan the front and back. You'll get measured centering, a condition check, a grade range, and whether grading pays off, with the math.</p>
+    {% if not status.llm %}<div class="notice small">No vision model configured: you'll get centering only (no condition check or auto-identification).</div>{% endif %}
+
+    {# Step tiles: filled in as photos are taken #}
+    <div class="shots">
+      <button type="button" class="shot" data-shot="front">
+        <img alt="" hidden><span class="shot-mark">{{ icon("card") }}</span><span class="shot-label"><strong>Front</strong><span class="small">Tap to scan</span></span>
+      </button>
+      <button type="button" class="shot" data-shot="back">
+        <img alt="" hidden><span class="shot-mark">{{ icon("card") }}</span><span class="shot-label"><strong>Back</strong><span class="small">Tap to scan</span></span>
+      </button>
+    </div>
+    <button type="button" class="tilt-btn" id="tilt-btn" hidden>
+      <img alt="" hidden><span><strong>+ Tilt shot</strong> <span class="small">optional · reveals scratches, print lines and dents</span></span>
+    </button>
+    <div id="shot-warnings"></div>
+
+    <button type="button" class="primary wide big-btn" id="start-scan">Scan front</button>
+    <button type="button" class="primary wide big-btn" id="analyze" hidden>Is it worth grading?</button>
+    <p class="center small"><a href="#" id="skip-back" hidden>Skip the back (less accurate)</a></p>
+  </section>
+
+  {% if recent %}
+  <section class="recent" aria-labelledby="recent-h">
+    <div class="section-head"><h2 id="recent-h">Recent checks</h2><a href="/history" class="small">View all</a></div>
+    {{ check_list(recent) }}
+  </section>
+  {% endif %}
+
+  <section class="help">
+    <details class="panel tips">
+      <summary><h2>Tips for an accurate read</h2>{{ icon("chevron", "chev") }}</summary>
+      <ul class="small">
+        <li>Take it out of the sleeve or toploader. Plastic hides wear and adds glare.</li>
+        <li>Lay it flat on a plain, dark surface (a black mousepad or t-shirt works).</li>
+        <li>Shoot straight down, filling the frame, with the whole card and a little background visible.</li>
+        <li>Even light without glare: by a window or under a ceiling light, not the phone flash.</li>
+        <li>For dents, bends and print lines, tilt the card under a light and look yourself. Photos straight-on rarely show them.</li>
+      </ul>
+    </details>
+    <details class="panel">
+      <summary><h2>Upload photos instead</h2>{{ icon("chevron", "chev") }}</summary>
+      <p class="small soft">Already have photos? Pick them here.</p>
+      <label class="field" for="up-front">Front</label><input type="file" id="up-front" accept="image/*" data-upload="front">
+      <label class="field" for="up-back">Back</label><input type="file" id="up-back" accept="image/*" data-upload="back">
+    </details>
+  </section>
+</div>
+
+{# Live camera (needs a secure context: https or localhost) #}
+<div id="camera" class="camera" hidden>
+  <video playsinline muted autoplay></video>
+  <div class="cam-top"><span id="cam-title">Front of card</span><button type="button" class="cam-close" aria-label="Close">{{ icon("cross") }}</button></div>
+  <div class="cam-frame" id="cam-frame"><span class="c tl"></span><span class="c tr"></span><span class="c bl"></span><span class="c br"></span></div>
+  <div class="cam-sub">Phone about 20 cm (8 in) above the card · out of the sleeve · plain dark surface</div>
+  <div class="cam-hint" id="cam-hint">Line the card up with the frame</div>
+  <div class="cam-bottom">
+    <label class="auto-toggle"><input type="checkbox" id="auto-capture" checked> Auto</label>
+    <button type="button" class="shutter" id="shutter" aria-label="Take photo"></button>
+    <span class="cam-spacer"></span>
+  </div>
+  <div class="flash" id="flash"></div>
+  <div class="flip" id="flip" hidden>
+    <img id="flip-thumb" alt="Front of the card, captured">
+    <p class="flip-ok">{{ icon("check") }} Front captured</p>
+    <div class="flip-icon" aria-hidden="true">{{ icon("flip") }}</div>
+    <h2>Flip the card over</h2>
+    <p class="small">Same spot, back side up. Then tap below.</p>
+    <button type="button" class="primary big-btn wide" id="flip-go">I flipped it: scan the back</button>
+    <button type="button" class="link-btn" id="flip-skip">Skip the back (less accurate)</button>
+  </div>
+</div>
+
+{# Native camera fallback (plain http on phones: no live camera API) #}
+<input type="file" accept="image/*" capture="environment" id="native-camera" hidden>
+
+<div id="analyzing" class="analyzing" hidden>
+  <div class="spinner-ring" aria-hidden="true"></div>
+  <p id="analyzing-step">Uploading…</p>
+  <p class="small">Usually 5–15 seconds</p>
+</div>
+{% endblock %}

@@ -1,0 +1,18 @@
+{
+  "_note": "From TAG's help center, which states its services are current as of 2026-10-21. VALUE and BASE are left out: no price is listed and they need 10 and 5 cards.",
+  "verified": true,
+  "verified_how": "TAG's help center",
+  "as_of": "2026-10-31",
+  "official_source": "https://help.taggrading.com/en/articles/10692075-what-are-tag-s-available-grading-services",
+  "default_shipping_per_card": {
+    "value": 8.0,
+    "verified": false,
+    "note": "Rough placeholder for round-trip shipping + insurance amortized per card on a small submission. Not a TAG figure; edit it."
+  },
+  "tiers": [
+    {"id": "standard", "name": "Standard", "fee": 59.95, "max_declared_value": 1000, "available": true, "note": "Est. 45 business days, includes TAG Score"},
+    {"id": "priority", "name": "Priority", "fee": 79.95, "max_declared_value": 1500, "available": true, "note": "Est. 30 business days, includes TAG Score"},
+    {"id": "express", "name": "Express", "fee": 149.95, "max_declared_value": 2500, "available": true, "note": "Est. 10 business days, includes TAG Score"},
+    {"id": "premier", "name": "Premier", "fee": 299.95, "max_declared_value": 5000, "available": true, "note": "Est. 3 to 5 business days, includes TAG Score"}
+  ]
+}

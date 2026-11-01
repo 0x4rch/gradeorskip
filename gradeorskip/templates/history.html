@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% from "_ui.html" import check_list %}
+{% block title %}History · {{ brand }}{% endblock %}
+{% block content %}
+<h1>History</h1>
+{% if checks %}
+<p class="lede">{{ checks|length }} card{{ "" if checks|length == 1 else "s" }} checked, newest first.</p>
+{{ check_list(checks) }}
+{% else %}
+<p class="lede">No checks yet. Check a card and it shows up here.</p>
+<a href="/" class="btn primary">Check a card</a>
+{% endif %}
+{% endblock %}

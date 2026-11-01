@@ -1,0 +1,21 @@
+{# Shared UI pieces. #}
+{% macro icon(name, cls="") %}<svg class="i {{ cls }}" aria-hidden="true" focusable="false"><use href="#i-{{ name }}"/></svg>{% endmacro %}
+
+{# Every verdict has its own mark, so it never rests on colour alone. #}
+{% macro vmark(vclass) %}{{ icon({"v-grade": "check", "v-marginal": "half", "v-dont": "cross"}.get(vclass, "dash")) }}{% endmacro %}
+
+{% macro vchip(f) %}<span class="vchip {{ f.vclass }}">{{ vmark(f.vclass) }}{{ f.verdict }}</span>{% endmacro %}
+
+{% macro check_list(items) %}
+<ul class="checks">
+  {% for f in items %}
+  <li><a href="/check/{{ f.id }}">
+    {% if f.image %}<img src="{{ f.image }}" alt="" loading="lazy">{% else %}<span class="noimg"></span>{% endif %}
+    {% set name = f.label.split(" · ", 1) %}<span class="c-main"><strong>{{ name[0] }}</strong>
+      {% if name|length > 1 %}<span class="small soft">{{ name[1] }}</span>{% endif %}
+      <span class="small soft">{{ f.grade or "No grade" }} · {{ f.created_at|day }}{% if f.centering %} · {{ f.centering }}{% endif %}</span></span>
+    <span class="c-end">{{ vchip(f) }}{% if f.gain is not none %}<span class="small c-gain {{ 'pos' if f.gain >= 0 else 'neg' }}">{% if f.gain >= 0 %}+${{ "%.0f"|format(f.gain) }}{% else %}−${{ "%.0f"|format(-f.gain) }}{% endif %}</span>{% endif %}</span>
+  </a></li>
+  {% endfor %}
+</ul>
+{% endmacro %}

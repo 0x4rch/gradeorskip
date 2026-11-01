@@ -1,0 +1,3 @@
+Figtree, by Erik Kennedy.
+Licensed under the SIL Open Font License 1.1: https://openfontlicense.org
+Latin subset downloaded from Google Fonts on 2026-10-31.

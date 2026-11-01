@@ -1,0 +1,233 @@
+{
+ "_note": "Real-photo condition test set. Images are NOT committed (third-party copyright); scripts/fetch_web_fixtures.py re-downloads them into data/webtest/. Labels are forum consensus or my own reading of the photo, not PSA results, except where noted. min_severity: the weakest call that counts as a detection.",
+ "cases": [
+  {
+   "id": "scan_sv3pt5_199",
+   "kind": "clean",
+   "files": {
+    "front": "clean/sv3pt5-199.png"
+   },
+   "source": "https://images.pokemontcg.io/sv3pt5/199_hires.png",
+   "note": "Official digital render (modern sets): no physical wear exists. WotC-era pokemontcg.io images are cropped scans without real corners, so they're excluded."
+  },
+  {
+   "id": "scan_swsh7_215",
+   "kind": "clean",
+   "files": {
+    "front": "clean/swsh7-215.png"
+   },
+   "source": "https://images.pokemontcg.io/swsh7/215_hires.png"
+  },
+  {
+   "id": "scan_sv1_1",
+   "kind": "clean",
+   "files": {
+    "front": "clean/sv1-1.png"
+   },
+   "source": "https://images.pokemontcg.io/sv1/1_hires.png"
+  },
+  {
+   "id": "scan_sv6_1",
+   "kind": "clean",
+   "files": {
+    "front": "clean/sv6-1.png"
+   },
+   "source": "https://images.pokemontcg.io/sv6/1_hires.png"
+  },
+  {
+   "id": "scan_swsh12pt5_1",
+   "kind": "clean",
+   "files": {
+    "front": "clean/swsh12pt5-1.png"
+   },
+   "source": "https://images.pokemontcg.io/swsh12pt5/1_hires.png"
+  },
+  {
+   "id": "scan_sv4_1",
+   "kind": "clean",
+   "files": {
+    "front": "clean/sv4-1.png"
+   },
+   "source": "https://images.pokemontcg.io/sv4/1_hires.png"
+  },
+  {
+   "id": "scan_sv2_1",
+   "kind": "clean",
+   "files": {
+    "front": "clean/sv2-1.png"
+   },
+   "source": "https://images.pokemontcg.io/sv2/1_hires.png"
+  },
+  {
+   "id": "scan_sm1_1",
+   "kind": "clean",
+   "files": {
+    "front": "clean/sm1-1.png"
+   },
+   "source": "https://images.pokemontcg.io/sm1/1_hires.png"
+  },
+  {
+   "id": "scan_swsh9_1",
+   "kind": "clean",
+   "files": {
+    "front": "clean/swsh9-1.png"
+   },
+   "source": "https://images.pokemontcg.io/swsh9/1_hires.png"
+  },
+  {
+   "id": "scan_swsh1_1",
+   "kind": "clean",
+   "files": {
+    "front": "clean/swsh1-1.png"
+   },
+   "source": "https://images.pokemontcg.io/swsh1/1_hires.png"
+  },
+  {
+   "id": "jp_charizard_bent_corner",
+   "kind": "damaged",
+   "files": {
+    "front": "raw/15162_01.jpg",
+    "back": "raw/15162_04.jpg"
+   },
+   "source": "https://www.elitefourum.com/t/15162",
+   "consensus": "PSA 6 at best (bend/crease bottom-right front corner plus other wear)",
+   "must_flag": [
+    {
+     "side": "front",
+     "area": "corners",
+     "min_severity": "moderate"
+    }
+   ]
+  },
+  {
+   "id": "base_charizard_back_dent",
+   "kind": "damaged",
+   "files": {
+    "front": "raw/17937_08.jpg",
+    "back": "raw/17937_06.jpg"
+   },
+   "source": "https://www.elitefourum.com/t/17937",
+   "consensus": "Dent on the back caps it around PSA 5-7; front otherwise 'almost gem mint'",
+   "must_flag": [
+    {
+     "side": "back",
+     "area": "surface",
+     "min_severity": "minor"
+    }
+   ]
+  },
+  {
+   "id": "back_bend",
+   "kind": "damaged",
+   "files": {
+    "back": "raw/18041_01.jpg"
+   },
+   "source": "https://www.elitefourum.com/t/18041",
+   "consensus": "Bend across the back: PSA 6 max",
+   "must_flag": [
+    {
+     "side": "back",
+     "area": "surface",
+     "min_severity": "moderate"
+    }
+   ]
+  },
+  {
+   "id": "snorlax_tear_closeup",
+   "kind": "damaged",
+   "files": {
+    "front": "raw/12996_03.jpg"
+   },
+   "source": "https://www.elitefourum.com/t/12996",
+   "consensus": "Edge tear: PSA 2-4. Poster drew a red circle on the photo.",
+   "must_flag": [
+    {
+     "side": "front",
+     "area": "edges",
+     "min_severity": "moderate"
+    }
+   ]
+  },
+  {
+   "id": "charizard_promo_tear_closeup",
+   "kind": "damaged",
+   "files": {
+    "front": "raw/12996_01.jpg"
+   },
+   "source": "https://www.elitefourum.com/t/12996",
+   "consensus": "Edge tear (circled by poster): PSA 2-4. Blurry, glare.",
+   "must_flag": [
+    {
+     "side": "front",
+     "area": "edges",
+     "min_severity": "minor"
+    }
+   ]
+  },
+  {
+   "id": "rhydon_back_whitening",
+   "kind": "light",
+   "files": {
+    "front": "raw/15422_01.jpg",
+    "back": "raw/15422_02.jpg"
+   },
+   "source": "https://www.elitefourum.com/t/15422",
+   "consensus": "Back top-left whitening: PSA 8-9, not a 10. In a toploader.",
+   "must_flag": [
+    {
+     "side": "back",
+     "area": "corners",
+     "min_severity": "minor"
+    }
+   ]
+  },
+  {
+   "id": "raichu_gx_print_line_scan",
+   "kind": "light",
+   "files": {
+    "front": "raw/17162_01.jpg"
+   },
+   "source": "https://www.elitefourum.com/t/17162",
+   "consensus": "Factory print line (scan exaggerates it): PSA 9 likely",
+   "must_flag": [
+    {
+     "side": "front",
+     "area": "surface",
+     "min_severity": "minor"
+    }
+   ]
+  },
+  {
+   "id": "charizard_gx_print_line_photo",
+   "kind": "light",
+   "files": {
+    "front": "raw/17162_03.jpg"
+   },
+   "source": "https://www.elitefourum.com/t/17162",
+   "consensus": "Light print line under the chin: PSA 9 likely",
+   "must_flag": [
+    {
+     "side": "front",
+     "area": "surface",
+     "min_severity": "minor"
+    }
+   ]
+  },
+  {
+   "id": "riolu_reverse_scratches",
+   "kind": "light",
+   "files": {
+    "front": "raw/16456_02.jpg"
+   },
+   "source": "https://www.elitefourum.com/t/16456",
+   "consensus": "Owner says reverse holo is scratched up; hand-held photo",
+   "must_flag": [
+    {
+     "side": "front",
+     "area": "surface",
+     "min_severity": "minor"
+    }
+   ]
+  }
+ ]
+}
