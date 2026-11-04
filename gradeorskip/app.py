@@ -22,7 +22,7 @@ from .providers.prices import (CardLookup, PriceChartingProvider, comps_links, g
                                variant_prices)
 from .grading import GRADERS
 from .pipeline import grade_for
-from .roi import RoiInput, compute_roi, load_fees
+from .roi import RoiInput, compute_roi, load_fees, yes_path
 
 app = FastAPI(title=BRAND)
 
@@ -45,6 +45,10 @@ async def access_gate(request: Request, call_next):
                         status_code=401)
 
 app.mount("/static", StaticFiles(directory=ROOT / "gradeorskip" / "static"), name="static")
+LAB = os.environ.get("GRADEORSKIP_LAB") == "1"  # capture lab: records every camera session (private builds only)
+if LAB:
+    from . import lab
+    app.include_router(lab.router)
 templates = Jinja2Templates(directory=ROOT / "gradeorskip" / "templates")
 lookup = CardLookup()
 MAX_UPLOAD = 15 * 1024 * 1024
@@ -58,6 +62,7 @@ def _fmt_time(ts: float) -> str:
 templates.env.filters["ts"] = _fmt_time
 templates.env.globals["brand"] = BRAND
 templates.env.globals["source_url"] = SOURCE_URL
+templates.env.globals["lab"] = LAB
 templates.env.filters["isodates"] = lambda s: re.sub(r"(\d{4}-\d{2}-\d{2})T[\d:.]+Z?", r"\1", s or "")
 # Full cents: a rounded value would come back from the form looking like a price the user typed.
 templates.env.filters["amount"] = lambda v: "" if v is None else f"{v:.2f}".rstrip("0").rstrip(".")
@@ -172,6 +177,7 @@ def _roi(check: dict, tier_id: str | None = None) -> tuple[dict | None, dict]:
     r = compute_roi(inp).to_dict()
     r["fee"] = fee
     r["shipping"] = inp.shipping
+    r["yes_path"] = yes_path(inp, r)
     card = check.get("card") or {}
     if card.get("printing_unconfirmed") and r["verdict"] in ("Grade it", "Marginal"):
         # These prices are for a different printing, so a positive answer proves nothing.
@@ -182,6 +188,35 @@ def _roi(check: dict, tier_id: str | None = None) -> tuple[dict | None, dict]:
         r["warnings"] = [*r.get("warnings", []), "Several printings share this number and prices differ. "
                          "Confirm the printing above before you pay for grading."]
     return r, tier
+
+
+# Below this nothing is realistic: the cheapest grader anywhere charges about $17 before shipping.
+LOWEST_REAL_COST = 15.0
+
+
+def _yes_view(check: dict, roi: dict | None, tier: dict, opts: list[dict]) -> dict | None:
+    """The answer to "what would make this a yes", in terms of services the card could really use."""
+    path = roi.get("yes_path") if roi and roi.get("ok") else None
+    if not path:
+        return None
+    view = {**path, "cost": roi["cost"]}
+    tiers = load_fees(_grader(check)["id"])["tiers"]
+    open_tiers = [t for t in tiers if t.get("available", True)]
+    yes = sorted((o for o in opts if o["verdict"] == "Grade it"), key=lambda o: o["fee"])
+    if roi["verdict"] == "Grade it":
+        view["state"] = "yes"
+    elif yes:
+        view.update(state="switch", tier=yes[0])
+    elif path["max_cost"] >= LOWEST_REAL_COST:
+        cheapest = min(open_tiers, key=lambda t: t["fee"])
+        fits = [t for t in tiers if not t.get("available", True) and t["fee"] + roi["shipping"] <= path["max_cost"]]
+        view.update(state="cheaper", cheapest=cheapest["name"].split(" (")[0], cheapest_total=cheapest["fee"] + roi["shipping"],
+                    paused=fits[0] if fits else None)
+    else:
+        view["state"] = "none"
+    source = (check["prices"] or {}).get("graded_source") or ""
+    view["check_sold"] = view["state"] != "none" and "PriceCharting" in source
+    return view
 
 
 def _tier_options(check: dict, current: dict) -> list[dict]:
@@ -314,12 +349,13 @@ def show_check(request: Request, check_id: str, msg: str = ""):
     roi, tier = _roi(check)
     grader = _grader(check)
     check["prices"] = check["prices"] or _default_prices(check["card"])
+    tier_opts = _tier_options(check, tier)
     return templates.TemplateResponse(request, "check.html", {
         "c": check, "r": check["result"], "roi": roi, "tier": tier, "fees": load_fees(grader["id"]),
         "grader": grader, "graders": GRADERS.values() if TAG_ENABLED else [], "active": _active(check["prices"]),
         "grade": grade_for(check["result"], grader["id"]),
         "card_image": _thumb(check),
-        "tier_opts": _tier_options(check, tier),
+        "tier_opts": tier_opts, "yes": _yes_view(check, roi, tier, tier_opts),
         "grades": GRADES, "status": _status(), "msg": msg,
         "variants": variant_prices(check["card"]),
         "current_variant": ((check["card"] or {}).get("raw_variant") or "").split(" (")[0],

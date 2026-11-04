@@ -27,14 +27,19 @@ sys.path.insert(0, str(ROOT))
 from gradeorskip.centering import CardNotFound, measure_centering  # noqa: E402
 from gradeorskip.grading import (CENTERING_MIN_CONFIDENCE, SEVERITIES, Finding, centering_cap,
                               estimate_grade, unmeasured_cap)  # noqa: E402
-from gradeorskip.pipeline import decode, to_jpeg  # noqa: E402
+import numpy as np  # noqa: E402
+
+from gradeorskip.centering import warp_card  # noqa: E402
+from gradeorskip.pipeline import _corner_closeup, _number_closeup, decode, to_jpeg  # noqa: E402
 from gradeorskip.providers.condition import PROMPT_VERSION, get_provider  # noqa: E402
 
 DATA = ROOT / "data" / "webtest"
 RANK = {s: i for i, s in enumerate(SEVERITIES)}
 
 
-def prepare(path: Path):
+def prepare(path: Path, side: str, guided: bool = False):
+    """Mirror the pipeline: a trusted or art-to-the-edge warp goes to the model at 2x with its
+    corner close-up (and the number strip on a front); anything else goes as the photo."""
     img = decode(path.read_bytes())
     if path.parent.name == "clean":
         # Official scans are tight crops; put them on a mat like a real photo so the
@@ -42,11 +47,16 @@ def prepare(path: Path):
         pad = max(img.shape[:2]) // 8
         img = cv2.copyMakeBorder(img, pad, pad, pad, pad, cv2.BORDER_CONSTANT, value=(45, 45, 45))
     try:
-        cen, card, _ = measure_centering(img)
-        # Mirror the pipeline: an untrusted warp isn't shown to the model.
-        return (card if cen.confidence >= CENTERING_MIN_CONFIDENCE else img), cen
+        cen, card, _ = measure_centering(img, guided=guided)
     except CardNotFound:
-        return img, None  # close-ups / partial cards: send the photo as-is
+        return img, None, []  # close-ups / partial cards: send the photo as-is
+    if not (cen.crop_ok and (cen.confidence >= CENTERING_MIN_CONFIDENCE or not cen.verified)):
+        return img, cen, []
+    view = warp_card(img, np.asarray(cen.quad, dtype=np.float32), scale=2.0) if cen.quad else card
+    extras = [("Close-up of the four corners (top-left, top-right / bottom-left, bottom-right)", _corner_closeup(view))]
+    if side == "front":
+        extras.append(("Close-up of the bottom strip (collector number only)", _number_closeup(view)))
+    return view, cen, extras
 
 
 def main():
@@ -64,6 +74,7 @@ def main():
     print(f"provider={provider.name} model={provider.model} prompt={PROMPT_VERSION}\n")
 
     spent, fp_calls, clean_areas, hits, needed = 0.0, 0, 0, 0, 0
+    real_fp, real_areas = 0, 0
     rows = []
     for case in cases:
         findings, calls, cens = [], {}, {}
@@ -74,9 +85,9 @@ def main():
                 break
             if spent >= a.max_cost:
                 sys.exit(f"stopped at --max-cost ${a.max_cost}")
-            card, cen = prepare(path)
+            card, cen, extras = prepare(path, side, guided=case.get("guided", False))
             cens[side] = cen
-            resp = provider.assess(to_jpeg(card), side)
+            resp = provider.assess(to_jpeg(card), side, extras)
             spent += 0 if resp.get("cached") else (resp.get("cost_usd") or 0)
             areas = resp["result"]["areas"]
             calls[side] = areas
@@ -91,6 +102,9 @@ def main():
             n = sum(1 for areas in calls.values() for x in areas if x["severity"] != "none")
             fp_calls += n
             clean_areas += sum(len(areas) for areas in calls.values())
+            if case.get("real"):
+                real_fp += n
+                real_areas += sum(len(areas) for areas in calls.values())
             verdict = "OK" if n == 0 else f"FP x{n}"
         else:
             for m in case["must_flag"]:
@@ -112,7 +126,8 @@ def main():
         print(f"{r[0]:<32} {r[1]:<8} {r[2]:<40} {r[3]:<10} {r[4]}")
         if r[5]:
             print(f"{'':<42}expected: {r[5]}")
-    print(f"\nclean scans: {fp_calls} false-positive area calls out of {clean_areas}")
+    print(f"\nclean cards: {fp_calls} false-positive area calls out of {clean_areas}"
+          f" (real phone photos: {real_fp} of {real_areas}; digital renders: {fp_calls - real_fp} of {clean_areas - real_areas})")
     print(f"labelled defects detected: {hits}/{needed}")
     print(f"new spend this run: ${spent:.4f}")
 

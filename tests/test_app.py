@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from conftest import FIXTURES
@@ -28,6 +29,7 @@ def test_end_to_end_centering_only(monkeypatch):
     assert r.status_code == 303
     data = client.get(f"/api/check/{cid}").json()
     assert data["roi"]["ok"] and data["roi"]["verdict"] in {"Grade it", "Marginal", "Don't grade"}
+    assert "What you paid doesn't change this" in client.get(f"/check/{cid}").text
     assert client.get(f"/files/{cid}/front_overlay.jpg").status_code == 200
 
 
@@ -240,3 +242,44 @@ def test_switching_to_tag_recalculates_with_its_own_fees_and_comps(monkeypatch):
     d = client.get(f"/api/check/{cid}").json()
     assert d["roi"]["ok"] and d["prices"]["graded"]["10"] == 400  # PSA comps kept
     assert client.post(f"/check/{cid}/grader", data={"grader": "bogus"}).status_code == 400
+
+
+def _priced(monkeypatch, **prices):
+    monkeypatch.setattr(app_module.lookup, "get", lambda cid: (None, ["offline"]))
+    files = {"front": ("f.jpg", (FIXTURES / "lr_60_40_front.jpg").read_bytes(), "image/jpeg"),
+             "back": ("b.jpg", (FIXTURES / "lr_60_40_back.jpg").read_bytes(), "image/jpeg")}
+    cid = client.post("/check", files=files, follow_redirects=False).headers["location"].rsplit("/", 1)[1]
+    form = {"raw": "", "psa10": "", "psa9": "", "psa8": "", "psa7": "", "tier": "value", "shipping": "8", "sell_fee": "0",
+            "fee_override": "", **prices}
+    client.post(f"/check/{cid}/prices", data=form, follow_redirects=False)
+    return client.get(f"/check/{cid}").text
+
+
+def test_yes_panel_explains_a_yes(monkeypatch):
+    page = _priced(monkeypatch, raw="10", psa10="1000", psa9="500", psa8="300", psa7="200")
+    assert "Why this is a yes" in page and "Stays a yes until total costs reach" in page
+
+
+def test_yes_panel_says_when_no_service_helps(monkeypatch):
+    page = _priced(monkeypatch, raw="40", psa10="45", psa9="42", psa8="41", psa7="40")
+    assert "What would make this a yes" in page and "No service makes this a yes" in page
+
+
+def test_yes_view_offers_a_cheaper_open_service():
+    roi = {"ok": True, "verdict": "Marginal", "cost": 67.99, "shipping": 8, "yes_path": {"max_cost": 50, "pays_at": 9, "top_grade": 10, "top_adds": 90}}
+    opts = [{"id": "standard", "name": "Standard", "fee": 59.99, "verdict": "Marginal"}, {"id": "value", "name": "Value", "fee": 39.99, "verdict": "Grade it"}]
+    view = app_module._yes_view({"prices": {}}, roi, {"id": "standard"}, opts)
+    assert view["state"] == "switch" and view["tier"]["id"] == "value"
+
+
+def test_yes_view_names_a_paused_service_that_would_work():
+    roi = {"ok": True, "verdict": "Marginal", "cost": 47.99, "shipping": 8, "yes_path": {"max_cost": 33.5, "pays_at": 10, "top_grade": 10, "top_adds": 90}}
+    opts = [{"id": "value", "name": "Value", "fee": 39.99, "verdict": "Marginal"}]
+    view = app_module._yes_view({"prices": {"graded_source": "PriceCharting"}}, roi, {"id": "value"}, opts)
+    assert view["state"] == "cheaper" and view["paused"]["id"] == "value_bulk" and view["check_sold"]
+    assert view["cheapest"] == "Value" and view["cheapest_total"] == pytest.approx(47.99)
+
+
+def test_yes_view_treats_a_tiny_budget_as_no_route():
+    roi = {"ok": True, "verdict": "Don't grade", "cost": 47.99, "shipping": 8, "yes_path": {"max_cost": 3, "pays_at": None, "top_grade": 10, "top_adds": 40}}
+    assert app_module._yes_view({"prices": {}}, roi, {"id": "value"}, [])["state"] == "none"

@@ -106,7 +106,14 @@ LOW_CONFIDENCE = 0.5
 
 def effective_severity(f: Finding) -> str:
     """Below LOW_CONFIDENCE a call counts one level milder: the vision model's
-    unsure calls were mostly false positives in testing (docs/condition_eval.md)."""
+    unsure calls were mostly false positives in testing (docs/condition_eval.md).
+
+    A minor corner or edge call doesn't count at all. On real phone photos of four pack-fresh
+    cards (capture lab, 2026-11-04) every corner and edge call was false: sparkle and side light
+    look like whitening at camera resolution, while a person sees it in hand at a glance. The
+    damage the model does catch there (tears, chips) comes back moderate or worse."""
+    if f.area in ("corners", "edges") and f.severity == "minor":
+        return "none"
     if f.confidence < LOW_CONFIDENCE and f.severity != "none":
         return SEVERITIES[SEVERITIES.index(f.severity) - 1]
     return f.severity
@@ -182,6 +189,9 @@ def estimate_grade(cap: CenteringCap, findings: list[Finding] | None,
         ceil, reason, conf = condition_ceiling(findings)
         top = min(cap.grade, ceil)
         expl.append(f"Condition findings suggest at most about a {ceil} ({reason}).")
+        if any(f.area in ("corners", "edges") and f.severity == "minor" for f in findings):
+            expl.append("Small corner or edge marks in the photos aren't counted: a camera can't tell them from "
+                        "sparkle or reflected light. Check the corners and edges in hand.")
         weights = SPREAD_ASSESSED
         if top == 10:
             weights = SPREAD_TOP_IS_10 if inspection == "good" else SPREAD_TOP_IS_10_LIMITED

@@ -60,3 +60,15 @@ Costs use OpenAI prices from third-party aggregators ($5/$30 per M tokens for gp
 ## Real-photo centering (no ground truth, visual check only)
 
 Of 10 real photos: 3 produced a confident measurement that looks right by eye; 2 found no card (a hand-held back at an angle, a dark back on a dark surface); 5 were low-confidence (0.05–0.5) and are now ignored for the grade cap. One of them, the Japanese Charizard (a wrong warp, confidence 0.5), had slipped through the old 0.5 threshold. Synthetic accuracy (0.5-point mean error) **does not carry over** to casual phone photos. Detection on hand-held, angled, sleeved and full-art cards is the next centering work item.
+
+## Real phone photos of clean cards (2026-11-04)
+
+The renders above have no sparkle, light-catching edges or camera softness, so they flattered the model. The capture lab added four pack-fresh, sleeved cards the owner checked in hand (Mega Charizard X ex promo, Mega Gengar ex JP, Heliolisk, gold Pikachu ex), photographed with the live camera on an iPhone. They are local only (`data/webtest/lab/`, cases `lab_*` in `web_labels.json`). The eval now mirrors the pipeline: a 2x straightened card, its corner close-up, and the number strip on fronts.
+
+| Prompt | False calls, real clean (of 24) | False calls, renders (of 30) | Labelled defects found (of 8) | Lab cards' grades |
+|---|---|---|---|---|
+| v6 (corner close-up) | 5, all corners/edges, up to moderate | 0 | 3 | 5–7, 5–7, 8–9, 8–10 |
+| v7 (phone-frame context) | 1 | 0 | 2 (lost the blurry promo tear) | all 8–10 |
+| **v7b** (+ tears, chips, creases always count) | 2, both minor corners | 0 | 3 | **all 8–10** |
+
+Decision (owner, 2026-11-04): a person checks whitening and nicks in hand far better than a camera, so the read should lean clean. A minor corner or edge call no longer lowers the grade; the page says to check corners and edges in hand. Cost: the bent-corner JP Charizard now reads 8–10. It reached 6–7 before only through back corner/edge calls; neither prompt ever saw the bend.

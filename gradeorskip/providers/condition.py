@@ -15,7 +15,7 @@ from pathlib import Path
 
 from ..config import DATA_DIR
 
-PROMPT_VERSION = "v5-stamp-view"  # v4 + printing stamp + how well the photo allowed inspection
+PROMPT_VERSION = "v7b-phone-frames"  # v6 + phone-camera frames: specks at corners/edges are not whitening; tears always count
 MAX_SIDE = 1024
 CACHE_DIR = DATA_DIR / "cache" / "llm"
 
@@ -91,6 +91,8 @@ SCHEMA = {
 
 SYSTEM = """You inspect a photo of ONE side of a raw trading card for physical damage, the way a strict but fair grader would.
 The image has usually been cropped and straightened already. Centering is measured separately; ignore it.
+The photos are frames from a phone camera, about 1,200 px across the card. At that size, light specks and a thin light rim along corners and edges are nearly always foil or silver-border sparkle, the card's cut edge catching light, sharpening halos or sensor noise. The person holding the card checks fine whitening better by eye, so only report what is unmistakable in a photo.
+That restraint is for specks and fine whitening only. A tear, a nick or chip missing from the edge, a crease, a bend or a dent is always reportable, even in a soft or glary photo.
 
 Return exactly three entries in `areas`: corners, edges, surface.
 - corners: whitening (white specks where the coloured border meets the corner), fraying, dings, bent or folded corners.
@@ -103,12 +105,13 @@ Set `inspection` honestly: finding nothing in a soft or glary photo is not the s
 Also fill `card` to identify the card (front only; on a back, use empty strings and confidence 0).
 Read the name and the collector number from the card itself (the number is usually printed at the bottom). Extra images may follow the main one, each introduced by a caption:
 - "Close-up of the bottom strip": use it only to read the collector number and set code, not for condition.
+- "Close-up of the four corners": the card's corners at full resolution, in a 2x2 grid. Judge `corners` from it: report whitening, fraying or a ding only if you can see it there, and place its location box on the MAIN image. If the corners look clean in the close-up, corners are "none", however soft the main image is.
 - "Tilted shot": the same side tilted under a light. Use it only to find surface defects that show at an angle (scratches, scuffs, print lines, dents, indentations) and report them under `surface`, with locations estimated on the MAIN image. Reflections, glare and rainbow holo sheen in it are expected, not defects; don't judge corners, edges or centering from it. Don't guess a number you can't read: leave it empty and lower the confidence.
 
 Severity scale:
 - none: you cannot point to a specific physical flaw in this area. THIS IS THE DEFAULT.
-- minor: one small flaw you can point to (a white speck on one corner, one faint print line, one light scratch).
-- moderate: clearly visible damage, or several separate small flaws.
+- minor: one small flaw you can point to (a solid white patch on one corner, one faint print line, one light scratch). Not a sparkle, a light rim or a speck.
+- moderate: damage a buyer would notice at arm's length: a chipped or frayed corner, a run of solid whitening or chipping along an edge, a clear scratch across the art. Never for specks or sparkle, however many.
 - major: a crease, bend, fold, dent, tear, heavy whitening, or water damage.
 
 What is NOT a defect (never report these):
@@ -120,7 +123,7 @@ What is NOT a defect (never report these):
 
 Rules:
 - Every severity other than "none" MUST include at least one location box around the flaw (normalised 0-1 coordinates, origin top-left of the image). If you can't place it, it's "none".
-- Bends, creases and dents often show only as a line or ripple in a reflection; call them major when you see that.
+- Bends, creases and dents often show only as a line or ripple in a reflection; call them major when you see that. But on holofoil, textured and full-art cards, lines, streaks and ripples inside the foil pattern are printing: call a crease only when one line runs straight across the art and continues into the border, or bends a reflection across the card.
 - `confidence` is how sure you are that your severity call is right. If the photo is too blurry, small or glary to judge an area, say "none" with low confidence and explain in image_issues; do not guess at damage.
 - Notes: short and specific, e.g. "white speck at top-left corner", "crease running diagonally across lower right"."""
 
@@ -207,7 +210,7 @@ class AnthropicProvider(ConditionProvider):
 
     def _call(self, jpeg, side, extras):
         import anthropic
-        client = anthropic.Anthropic()
+        client = anthropic.Anthropic(**_client_options())
         try:
             resp = client.messages.create(
                 model=self.model,
@@ -250,7 +253,7 @@ class OpenAIProvider(ConditionProvider):
 
     def _call(self, jpeg, side, extras):
         import openai
-        client = openai.OpenAI()
+        client = openai.OpenAI(**_client_options())
         url = "data:image/jpeg;base64," + base64.b64encode(jpeg).decode()
         extra = {}
         if self.model.startswith(("gpt-5", "o3", "o4")):
@@ -307,6 +310,17 @@ class MockProvider(ConditionProvider):
             },
             "provider": "mock", "model": "mock", "usage": {}, "cost_usd": 0.0, "seconds": 0.0, "cached": False,
         }
+
+
+def _client_options() -> dict:
+    """Optional limits on the vision call: GRADEORSKIP_LLM_TIMEOUT (seconds) and GRADEORSKIP_LLM_RETRIES.
+    Unset keeps the SDK defaults."""
+    options = {}
+    if os.environ.get("GRADEORSKIP_LLM_TIMEOUT"):
+        options["timeout"] = float(os.environ["GRADEORSKIP_LLM_TIMEOUT"])
+    if os.environ.get("GRADEORSKIP_LLM_RETRIES"):
+        options["max_retries"] = int(os.environ["GRADEORSKIP_LLM_RETRIES"])
+    return options
 
 
 def get_provider() -> ConditionProvider | None:

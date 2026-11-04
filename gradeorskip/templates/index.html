@@ -19,11 +19,12 @@
     <button type="button" class="tilt-btn" id="tilt-btn" hidden>
       <img alt="" hidden><span><strong>+ Tilt shot</strong> <span class="small">optional · reveals scratches, print lines and dents</span></span>
     </button>
-    <div id="shot-warnings"></div>
+    <div id="shot-warnings" role="status"></div>
 
     <button type="button" class="primary wide big-btn" id="start-scan">Scan front</button>
     <button type="button" class="primary wide big-btn" id="analyze" hidden>Is it worth grading?</button>
     <p class="center small"><a href="#" id="skip-back" hidden>Skip the back (less accurate)</a></p>
+    {% block scan_foot %}{% endblock %}
   </section>
 
   {% if recent %}
@@ -32,6 +33,7 @@
     {{ check_list(recent) }}
   </section>
   {% endif %}
+  {% block home_extra %}{% endblock %}
 
   <section class="help">
     <details class="panel tips">
@@ -54,12 +56,14 @@
 </div>
 
 {# Live camera (needs a secure context: https or localhost) #}
-<div id="camera" class="camera" hidden>
+<div id="camera" class="camera" role="dialog" aria-modal="true" aria-labelledby="cam-title" tabindex="-1" hidden>
   <video playsinline muted autoplay></video>
   <div class="cam-top"><span id="cam-title">Front of card</span><button type="button" class="cam-close" aria-label="Close">{{ icon("cross") }}</button></div>
   <div class="cam-frame" id="cam-frame"><span class="c tl"></span><span class="c tr"></span><span class="c bl"></span><span class="c br"></span></div>
+  <svg class="cam-outline" id="cam-outline" aria-hidden="true"><polygon points=""/></svg>
   <div class="cam-sub">Phone about 20 cm (8 in) above the card · out of the sleeve · plain dark surface</div>
-  <div class="cam-hint" id="cam-hint">Line the card up with the frame</div>
+  <div class="cam-hint" id="cam-hint">Looking for the card…</div>
+  <p class="sr-only" id="cam-status" role="status"></p>
   <div class="cam-bottom">
     <label class="auto-toggle"><input type="checkbox" id="auto-capture" checked> Auto</label>
     <button type="button" class="shutter" id="shutter" aria-label="Take photo"></button>
@@ -80,9 +84,9 @@
 {# Native camera fallback (plain http on phones: no live camera API) #}
 <input type="file" accept="image/*" capture="environment" id="native-camera" hidden>
 
-<div id="analyzing" class="analyzing" hidden>
+<div id="analyzing" class="analyzing" role="dialog" aria-modal="true" aria-labelledby="analyzing-step" tabindex="-1" hidden>
   <div class="spinner-ring" aria-hidden="true"></div>
-  <p id="analyzing-step">Uploading…</p>
+  <p id="analyzing-step" aria-live="polite">Uploading…</p>
   <p class="small">Usually 5–15 seconds</p>
 </div>
 {% endblock %}

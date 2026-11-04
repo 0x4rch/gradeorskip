@@ -1,6 +1,6 @@
 import pytest
 
-from gradeorskip.roi import RoiInput, compute_roi, load_fees
+from gradeorskip.roi import RoiInput, compute_roi, load_fees, yes_path
 
 
 def test_expected_value_math():
@@ -107,3 +107,43 @@ def test_ceiling_cannot_justify_grading():
     r = compute_roi(RoiInput(probs={10: 0.3, 9: 0.7}, raw_price=50, graded_prices={10: 600},
                              grading_fee=20, shipping=0))
     assert not r.ok and r.verdict == "Need prices" and "psa9" in r.missing
+
+
+def _yes(**over):
+    base = dict(probs={10: 0.2, 9: 0.42, 8: 0.25, 7: 0.13}, raw_price=20, graded_prices={10: 400, 9: 120, 8: 40, 7: 25},
+                grading_fee=39.99, shipping=8)
+    inp = RoiInput(**{**base, **over})
+    return inp, compute_roi(inp)
+
+
+def test_yes_path_max_cost_is_the_real_verdict_boundary():
+    for over in ({}, {"selling_fee_pct": 13}, {"graded_prices": {10: 3000, 9: 900, 8: 300, 7: 100}, "raw_price": 200}):
+        inp, r = _yes(**over)
+        limit = yes_path(inp, r.to_dict())["max_cost"]
+        assert limit > 0
+        at = compute_roi(RoiInput(**{**inp.__dict__, "grading_fee": limit - inp.shipping}))
+        over_it = compute_roi(RoiInput(**{**inp.__dict__, "grading_fee": limit - inp.shipping + 0.02}))
+        assert at.verdict == "Grade it" and over_it.verdict != "Grade it"
+
+
+def test_yes_path_long_shot_is_limited_by_the_chance_of_a_loss():
+    inp, r = _yes(graded_prices={10: 1500, 9: 60, 8: 25, 7: 20})
+    assert r.verdict == "Marginal"
+    path = yes_path(inp, r.to_dict())
+    assert path["max_cost"] == pytest.approx(40) and path["pays_at"] == 10 and path["top_grade"] == 10
+
+
+def test_yes_path_names_the_lowest_grade_that_pays():
+    inp, r = _yes(graded_prices={10: 400, 9: 120, 8: 90, 7: 25})
+    assert yes_path(inp, r.to_dict())["pays_at"] == 8
+
+
+def test_yes_path_can_be_impossible():
+    inp, r = _yes(raw_price=12, graded_prices={10: 53.78, 9: 25.78, 8: 14.25, 7: 11})
+    path = yes_path(inp, r.to_dict())
+    assert path["max_cost"] < 0 and path["pays_at"] is None and path["top_adds"] == pytest.approx(41.78)
+
+
+def test_yes_path_needs_an_answer():
+    inp, r = _yes(raw_price=None)
+    assert yes_path(inp, r.to_dict()) is None

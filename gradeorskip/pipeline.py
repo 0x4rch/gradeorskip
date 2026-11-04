@@ -64,6 +64,19 @@ def _number_closeup(card: np.ndarray) -> bytes:
     return to_jpeg(card[int(0.87 * h):], max_side=1600, quality=90)
 
 
+def _corner_closeup(card: np.ndarray) -> bytes:
+    """The four corners of a straightened card at full resolution, as a 2x2 mosaic (top-left,
+    top-right / bottom-left, bottom-right). In the whole-card view the model sees, a corner is about
+    40 px, so it guessed at whitening: in the capture lab it flagged clean corners it couldn't see."""
+    h, w = card.shape[:2]
+    s = int(0.17 * w)
+    tiles = [card[:s, :s], card[:s, w - s:], card[h - s:, :s], card[h - s:, w - s:]]
+    gap = np.full((s, 6, 3), 255, np.uint8)
+    top, bottom = np.hstack([tiles[0], gap, tiles[1]]), np.hstack([tiles[2], gap, tiles[3]])
+    mosaic = np.vstack([top, np.full((6, top.shape[1], 3), 255, np.uint8), bottom])
+    return to_jpeg(mosaic, max_side=1600, quality=92)
+
+
 def combine_centering(cens: list, frames_sent: int = 1) -> dict:
     """One side's centering from several burst frames, by consensus: the median of the frames
     that measured reliably and agree within 4 points (a misread border gets outvoted). A burst
@@ -209,6 +222,9 @@ def run_check(front: bytes, back: bytes | None, use_llm: bool = True, guided: se
 
     # Extra images for the model, sent with that side's call.
     extras: dict[str, list[tuple[str, bytes]]] = {}
+    for side in hires:
+        extras.setdefault(side, []).append(
+            ("Close-up of the four corners (top-left, top-right / bottom-left, bottom-right)", _corner_closeup(views[side])))
     if "front" in hires:
         extras.setdefault("front", []).append(
             ("Close-up of the bottom strip (collector number only)", _number_closeup(views["front"])))

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -140,3 +141,29 @@ def compute_roi(inp: RoiInput) -> RoiResult:
                            "sell for. Even so grading loses money, so the answer holds.")
     return RoiResult(True, verdict, reason, rows, round(ev, 2), round(ev_net, 2), round(raw_net, 2),
                      round(cost, 2), round(gain, 2), round(p_loss, 4), assumptions, warnings, [], breakeven)
+
+
+def yes_path(inp: RoiInput, res: dict) -> dict | None:
+    """What would have to be true for a Grade it: the same two tests as compute_roi, solved for total cost."""
+    if not res.get("ok"):
+        return None
+    keep = 1.0 - inp.selling_fee_pct / 100.0
+    raw_net = res["raw_net"]
+    rows = sorted(res["rows"], key=lambda r: r["price"], reverse=True)
+    extra = res["ev_graded_gross"] * keep - raw_net  # what grading adds on average, before costs
+    by_gain = extra - 15.0 if extra - 15.0 <= 60.0 else extra / 1.25  # gain >= max($15, 25% of cost)
+    covered, by_chance = 0.0, -math.inf
+    for row in rows:  # at least half the outcomes have to cover the cost
+        covered += row["p"]
+        if covered >= 0.5 - 1e-9:
+            by_chance = row["price"] * keep - raw_net
+            break
+    by_grade = sorted(res["rows"], key=lambda r: r["grade"], reverse=True)
+    pays_at = None
+    for row in by_grade:
+        if row["price"] * keep < raw_net + res["cost"]:
+            break
+        pays_at = row["grade"]
+    top = by_grade[0]
+    return {"max_cost": math.floor(min(by_gain, by_chance) * 100) / 100, "pays_at": pays_at, "top_grade": top["grade"],
+            "top_adds": round(top["price"] * keep - raw_net, 2)}

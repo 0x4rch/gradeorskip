@@ -28,7 +28,7 @@ Once the card is roughly framed and in focus, the phone collects frames for abou
 ## iPhone Pro focus
 
 The plain "Back Camera" on iPhone 13 Pro and later can't focus closer than about 20 cm, and in a browser it never switches to the macro lens. The first guide filled 82% of the screen width, which put the phone about 10 cm from the card: the camera hunted for focus forever and auto-capture never fired. Now:
-- the guide is 52% of the screen width (card about 20 cm away; still ~900 px wide in a 4K frame);
+- the guide is 36% of the screen width, so the card fills it about 22 cm away (~620 px wide in a 4K frame). It was 52%, meant for 20 cm, but a full-screen portrait preview shows only about 0.82 × the distance across, so 52% needed about 15 cm: inside the main lens's focus limit. On a real iPhone (2026-11-04) that pulled the phone in until the triple camera switched to the macro lens, and the photos came out grainy, the back cropped inside its border;
 - the app prefers the "Back Triple Camera" / "Back Dual Wide Camera" device, which switches lenses for close focus;
 - each check stores `capture_debug` (camera label, track settings, the last 25 readings) so real-device failures can be diagnosed.
 

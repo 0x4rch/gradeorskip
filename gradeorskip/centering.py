@@ -575,12 +575,78 @@ def measure_borders_color(card: np.ndarray) -> tuple[Borders, float, list[str]]:
     return Borders(float(left), float(right), float(top), float(bottom)), max(0.0, round(confidence, 2)), warnings
 
 
+def thin_frame(card: np.ndarray) -> tuple[Borders, float] | None:
+    """A full-art card's printed frame, followed inward from the cut edge on each side.
+
+    Edge-hunting fails here: each side alone locks onto a banner or art line inside the real
+    frame (the capture lab's Mega Charizard X read top 80 px on a 24 px frame; a gold Pikachu
+    read 47). Instead, at each depth take the median colour along the side and how much it
+    varies: the frame keeps its own colour and stays even; it ends where either jumps. On the
+    bottom only, a short jump (8 px or less) that comes back is the copyright line printed in
+    the frame; elsewhere art that happens to match the frame's colour must not count. Returns (borders, confidence) only if all four sides end
+    inside 1-9% of the width and the frame balances (left+right ~ top+bottom)."""
+    h, w = card.shape[:2]
+    lab = cv2.cvtColor(cv2.GaussianBlur(card, (3, 3), 0), cv2.COLOR_BGR2LAB).astype(np.float32)
+    ya0, ya1, xa0, xa1 = int(0.2 * h), int(0.8 * h), int(0.2 * w), int(0.8 * w)
+    dmax, dmin = int(0.09 * w), int(0.01 * w)
+    found = {}
+    for name in ("left", "right", "top", "bottom"):
+        meds, mads = [], []
+        for d in range(dmax + 16):
+            line = {"left": lab[ya0:ya1, d], "right": lab[ya0:ya1, w - 1 - d],
+                    "top": lab[d, xa0:xa1], "bottom": lab[h - 1 - d, xa0:xa1]}[name]
+            med = np.median(line, axis=0)
+            meds.append(med)
+            mads.append(float(np.median(np.linalg.norm(line - med, axis=1))))
+        ref = np.median(np.array(meds[3:7]), axis=0)
+        base = float(np.median(mads[3:7]))
+        bad = [bool(np.linalg.norm(m - ref) > 12 or s > max(6.0, 2.5 * base)) for m, s in zip(meds, mads)]
+        inner, d = None, max(6, dmin)
+        while d < dmax:
+            if bad[d] and bad[d + 1] and bad[d + 2]:
+                run = next((k for k in range(d, d + 9) if not bad[k]), None)
+                if name == "bottom" and run is not None and not any(bad[run:run + 3]):
+                    d = run  # a short break that comes back: the copyright line printed in the frame
+                    continue
+                inner = d
+                break
+            d += 1
+        if inner is None:
+            return None
+        found[name] = float(inner)
+    b = Borders(found["left"], found["right"], found["top"], found["bottom"])
+    if _balance(b.left + b.right, b.top + b.bottom) > BALANCE_MAX:
+        return None
+    return b, 0.8
+
+
 def measure_centering(img: np.ndarray, guided: bool = False) -> tuple[CenteringResult, np.ndarray, np.ndarray]:
     """Measure one side. Returns (result, warped card, overlay image)."""
     card, method, quad = normalize_card(img, guided)
     borders, conf, warnings = measure_borders(card)
     crop_ok = corners_intact(card)
     problems = verify_borders(card, borders)
+    if any("inner frame on every side" in w for w in warnings):
+        # A side with no inner frame gets a made-up border, so the ratio is invented. On a gold
+        # full-art Pikachu (capture lab, 2026-11-04) that read 64/36 at confidence 0.75 and capped
+        # the grade. With a sharp photo this is almost always art running to the edge.
+        problems = problems + ["no inner frame on every side"]
+    frame = thin_frame(card) if crop_ok else None
+    if frame and not problems and not verify_borders(card, frame[0]):
+        # Both read a frame. If the standard one runs well past where the frame's colour ends on a
+        # side other than the bottom (whose copyright line can end the follower early), it has
+        # wandered into the art: a gold Pikachu read 48/27/39/34 px on a 30 px frame and passed.
+        # Only when the follower sees an even frame and the standard reading is wildly uneven: on a
+        # card back the blue border's gradient stops the follower early, and that must not win.
+        fb = frame[0]
+        spread = lambda b: max(b.left, b.right, b.top, b.bottom) / max(1.0, min(b.left, b.right, b.top, b.bottom))
+        if (spread(fb) <= 1.3 and spread(borders) >= 1.6
+                and any(getattr(borders, s) > getattr(fb, s) + 4 for s in ("left", "right", "top"))):
+            problems = ["frame runs into the art"]
+    if problems and frame:
+        borders, conf = frame
+        problems = []
+        warnings = ["Measured from the card's thin printed frame (full-art layout)."]
     if problems or not crop_ok:
         conf = min(conf, 0.5)  # below the trust line: it won't cap the grade
         warnings = list(warnings)

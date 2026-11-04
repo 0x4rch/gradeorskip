@@ -11,6 +11,7 @@
 <link rel="apple-touch-icon" href="/static/icon-180.png">
 <link rel="preload" href="/static/fonts/figtree-latin-var.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/static/app.css?v={{ asset_v }}">
+{% block head_extra %}{% endblock %}
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
@@ -25,21 +26,27 @@
 </defs></svg>
 <header class="top">
   <a class="brand" href="/" aria-label="{{ brand }}"><img src="/static/logo.svg" alt="" width="24" height="24"><span class="brand-name">{{ brand }}</span></a>
+  {% block nav %}
   {% set path = request.url.path %}
   <nav aria-label="Main">
     <a href="/" {% if path == "/" or path.startswith("/check") %}aria-current="page"{% endif %}>Check</a>
     <a href="/batch" {% if path.startswith("/batch") %}aria-current="page"{% endif %}>Batch</a>
     <a href="/history" {% if path == "/history" %}aria-current="page"{% endif %}>History</a>
   </nav>
+  {% endblock %}
 </header>
 <main>
+{% block banner %}{% endblock %}
 {% block content %}{% endblock %}
+{% block after_content %}{% endblock %}
 </main>
 <footer><p>
   {{ brand }} is an independent estimate tool. It isn't affiliated with or endorsed by PSA, TAG, CGC, BGS or any grading company, or by Nintendo, Creatures, Game Freak or The Pokémon Company.
   Grades are estimates from photos and can be wrong. Photos hide surface flaws. Prices come from third-party sources and change daily.
-  <br>Condition model: {{ status.llm or "not configured" }} · Graded prices: {{ "PriceCharting" if status.pricecharting else "manual entry" }} · <a href="{{ source_url }}" rel="noopener">Source code</a>
+  <br>{% if not hide_internals %}Condition model: {{ status.llm or "not configured" }} · Graded prices: {{ "PriceCharting" if status.pricecharting else "manual entry" }} · {% endif %}<a href="{{ source_url }}" rel="noopener">Source code</a>{% block footer_extra %}{% endblock %}
 </p></footer>
 <script src="/static/app.js?v={{ asset_v }}"></script>
+{% if lab %}<script src="/static/lab.js?v={{ asset_v }}"></script>{% endif %}
+{% block scripts_extra %}{% endblock %}
 </body>
 </html>

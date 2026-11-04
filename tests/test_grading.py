@@ -29,8 +29,12 @@ def test_near_boundary_flag():
 
 def test_condition_ceiling():
     assert condition_ceiling([F("none"), F("none", "edges")])[0] == 10
-    assert condition_ceiling([F("minor")])[0] == 9
-    assert condition_ceiling([F("minor"), F("minor", "edges")])[0] == 8
+    # A minor corner or edge call doesn't count: on real photos of pack-fresh cards they were all false.
+    assert condition_ceiling([F("minor")])[0] == 10
+    assert condition_ceiling([F("minor"), F("minor", "edges")])[0] == 10
+    assert condition_ceiling([F("minor", "surface")])[0] == 9
+    assert condition_ceiling([F("minor", "surface"), F("minor", "surface", side="back")])[0] == 8
+    assert condition_ceiling([F("moderate", "edges")])[0] == 7
     assert condition_ceiling([F("none"), F("moderate", "surface")])[0] == 7
     assert condition_ceiling([F("major")])[0] == 5
 

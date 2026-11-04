@@ -49,12 +49,35 @@
   <details class="fixcard" id="fix" {% if not c.card or msg == "pick" %}open{% endif %}>
     <summary>{{ "Not this card?" if c.card else "Find the card" }}</summary>
   {% if msg == "pick" %}<div class="notice">Tap a card in the results first, then "Use this card".</div>{% endif %}
-  <input type="search" placeholder="Name and number, e.g. charizard 4/102" autocomplete="off" enterkeyhint="search"
-         data-card-search data-results="roi-results" data-target="roi-card-id"
+  <input type="search" aria-label="Card name and number" placeholder="Name and number, e.g. charizard 4/102" autocomplete="off" enterkeyhint="search"
+         data-card-search data-results="roi-results" data-status="roi-status" data-target="roi-card-id"
          value="{{ (ident.guess.name_en ~ ' ' ~ ident.guess.number) if ident and ident.guess and ident.guess.name_en else '' }}">
+  <p class="sr-only" id="roi-status" role="status"></p>
   <ul class="results-list" id="roi-results"></ul>
   <form method="post" action="/check/{{ c.id }}/card"><input type="hidden" name="card_id" id="roi-card-id"><button class="secondary wide" type="submit" disabled data-needs-card>Use this card</button></form>
   </details>
+
+  {# --- a no should still say what would change it --- #}
+  {% if yes %}
+  <section class="yes-path" aria-labelledby="yes-path-title">
+    <h2 class="row-name" id="yes-path-title">{{ "Why this is a yes" if yes.state == "yes" else "What would make this a yes" }}</h2>
+    {% if yes.pays_at %}<p>{% if yes.pays_at == yes.top_grade %}Only pays at {{ grader.name }} {{ yes.pays_at }}.{% else %}Pays at {{ grader.name }} {{ yes.pays_at }} or better.{% endif %}</p>{% endif %}
+    {% if yes.state == "yes" %}
+    <p>Stays a yes until total costs reach ${{ "%.2f"|format(yes.max_cost) }}. You're at ${{ "%.2f"|format(yes.cost) }}.</p>
+    {% elif yes.state == "switch" %}
+    <p>{{ yes.tier.name }} at ${{ "%.2f"|format(yes.tier.fee) }} makes this a yes.</p>
+    <form method="post" action="/check/{{ c.id }}/tier"><button class="secondary" type="submit" name="tier" value="{{ yes.tier.id }}">Use {{ yes.tier.name }}</button></form>
+    {% elif yes.state == "cheaper" %}
+    <p>A yes if your total cost is under ${{ "%.2f"|format(yes.max_cost) }}. {{ yes.cheapest }}, the cheapest open service, comes to ${{ "%.2f"|format(yes.cheapest_total) }} with shipping.</p>
+    {% if yes.paused %}<p>{{ yes.paused.name.split(" (")[0] }} at ${{ "%.2f"|format(yes.paused.fee) }} would do it, but it's paused.</p>{% endif %}
+    {% elif yes.top_adds > 0 %}
+    <p>No service makes this a yes. A {{ grader.name }} {{ yes.top_grade }} would add ${{ "%.0f"|format(yes.top_adds) }} over raw, but the likelier grades wouldn't cover even a cheap service.</p>
+    {% else %}
+    <p>No service makes this a yes, because no likely grade sells for more than raw.</p>
+    {% endif %}
+    {% if yes.check_sold %}<p class="small soft">Check recent {{ grader.name }} sold listings before you pay{% for label, url in comps if (grader.name ~ " 9") in label %}{% if loop.first %} (<a href="{{ url }}" target="_blank" rel="noopener">{{ label }}</a>){% endif %}{% endfor %}. Our Grade 9 price can include other graders.</p>{% endif %}
+  </section>
+  {% endif %}
 
   {# --- anything that undermines those numbers sits right under them --- #}
   {% set sleeved = [] %}
@@ -64,7 +87,7 @@
   {% if sleeved %}
   <div class="notice err small"><strong>Looks sleeved or in a holder,</strong> so this read is unreliable. <a href="/">Take it out and rescan</a></div>
   {% elif retake %}
-  <div class="notice small">The {{ retake|join(" and ") }} photo wasn't ideal, so this read is less reliable. <a href="/">Retake</a></div>
+  <div class="notice small">The {{ retake|join(" and ") }} photo wasn't ideal, so this read is less reliable. <a href="/?retake={{ c.id }}">Retake</a></div>
   {% endif %}
   {% if c.card and c.card.printing_unconfirmed %}
   <div class="notice err"><strong>This card looks stamped ({{ c.card.stamp }}).</strong> Stamped printings sell differently, and we couldn't match this one automatically. Pick it below.</div>
@@ -81,7 +104,7 @@
   <div class="rows">
     {% if roi and roi.ok %}
     <details class="row" id="math">
-      <summary><strong>The money</strong><span>{% if roi.verdict == "Grade it" %}Expected to beat selling raw{% elif roi.verdict == "Marginal" %}{{ "Pays off only with a top grade" if "top grade" in roi.reason else "Small gain for the cost" }}{% else %}Selling raw comes out ahead{% endif %}</span>{{ icon("chevron", "chev") }}</summary>
+      <summary><h2 class="row-name">The money</h2><span>{% if roi.verdict == "Grade it" %}Expected to beat selling raw{% elif roi.verdict == "Marginal" %}{{ "Pays off only with a top grade" if "top grade" in roi.reason else "Small gain for the cost" }}{% else %}Selling raw comes out ahead{% endif %}</span>{{ icon("chevron", "chev") }}</summary>
       <div class="row-body">
       <p>{{ roi.reason }}</p>
   <div class="scroll"><table>
@@ -99,12 +122,13 @@
   </table></div>
   {% for a in roi.assumptions %}<p class="small soft">Assumption: {{ a }}</p>{% endfor %}
   <p class="small soft">Each grade's chance times its price. The chances are uncalibrated estimates, so treat this as a rough guide.</p>
+  <p class="small soft">What you paid doesn't change this: that money is spent whether you grade or not.</p>
       </div>
     </details>
     {% endif %}
     {% if g %}
     <details class="row" id="centering">
-      <summary><strong>Centering</strong><span>{% if g.centering_cap.limiting.startswith("not measured") %}Not measured{% else %}Allows {{ grader.name }} {{ g.centering_cap.grade }} · {{ g.centering_cap.limiting.split(" (")[0] }}{% endif %}</span>{{ icon("chevron", "chev") }}</summary>
+      <summary><h2 class="row-name">Centering</h2><span>{% if g.centering_cap.limiting.startswith("not measured") %}Not measured{% else %}Allows {{ grader.name }} {{ g.centering_cap.grade }} · {{ g.centering_cap.limiting.split(" (")[0] }}{% endif %}</span>{{ icon("chevron", "chev") }}</summary>
       <div class="row-body">
       {% if sleeved %}<div class="notice small">Plastic edges and glare get read as card edges and whitening, so centering and edge results here are unreliable.</div>{% endif %}
   <p class="small soft">Measured with computer vision. Green is the card's cut edge, magenta the detected inner frame. If the lines are in the wrong place, the numbers are wrong too, so retake the photo.</p>
@@ -138,12 +162,12 @@
       </div>
     </details>
     <details class="row" id="condition">
-      <summary><strong>Condition</strong><span>{% if g.condition_ceiling %}{{ g.condition_reason[:1]|upper }}{{ g.condition_reason[1:] }}{% else %}Not assessed, check it yourself{% endif %}</span>{{ icon("chevron", "chev") }}</summary>
+      <summary><h2 class="row-name">Condition</h2><span>{% if g.condition_ceiling %}{{ g.condition_reason[:1]|upper }}{{ g.condition_reason[1:] }}{% else %}Not assessed, check it yourself{% endif %}</span>{{ icon("chevron", "chev") }}</summary>
       <div class="row-body">
   {% if not r.llm %}
     <p class="soft">Not assessed: no vision model ran on this check. Check the corners, edges and surface yourself under a bright light.</p>
   {% else %}
-  <p class="small soft">AI read ({{ r.llm.model }}). Red boxes mark what it saw. In our tests it caught obvious damage (edge tears, a scratched holo) but missed bends, dents, faint corner whitening and print lines, so check those yourself under a light held at an angle. "None" means nothing was visible, not that the card is flawless.</p>
+  <p class="small soft">AI read{% if not hide_internals %} ({{ r.llm.model }}){% endif %}. Red boxes mark what it saw. In our tests it caught obvious damage (edge tears, a scratched holo) but missed bends, dents, faint corner whitening and print lines, so check those yourself under a light held at an angle. "None" means nothing was visible, not that the card is flawless.</p>
   <div class="grid2">
   {% for side in ["front", "back"] %}
     {% set s = r.sides.get(side) %}
@@ -196,7 +220,7 @@
     {% if graders %}<form method="post" action="/check/{{ c.id }}/grader" class="seg" aria-label="Grading company">
       {% for o in graders %}<button type="submit" name="grader" value="{{ o.id }}" {% if o.id == grader.id %}class="on" aria-pressed="true"{% endif %}>{{ o.name }}</button>{% endfor %}
     </form>{% endif %}
-    <div class="service-head"><strong>{{ grader.name }} service</strong>
+    <div class="service-head"><h2 class="row-name">{{ grader.name }} service</h2>
       <span class="soft small">fee per card{% if not fees.verified %} · <a href="#prices" data-open="prices">unverified</a>{% endif %} · + ${{ "%.0f"|format(roi.shipping) }} shipping</span></div>
     <form method="post" action="/check/{{ c.id }}/tier" class="tiers">
       {% for o in tier_opts %}
@@ -214,27 +238,27 @@
 
   <div class="rows">
     <details class="row" id="prices" {% if roi and not roi.ok %}open{% endif %}>
-      <summary><strong>Prices</strong><span>Raw and graded prices, fees</span>{{ icon("chevron", "chev") }}</summary>
+      <summary><h2 class="row-name">Prices</h2><span>Raw and graded prices, fees</span>{{ icon("chevron", "chev") }}</summary>
       <div class="row-body">
   <form class="prices-form" method="post" action="/check/{{ c.id }}/prices">
-    <label class="field">Raw (ungraded) price</label>
-    <input type="text" name="raw" inputmode="decimal" value="{{ p.raw|amount }}" placeholder="$">
+    <label class="field" for="price-raw">Raw (ungraded) price</label>
+    <input type="text" id="price-raw" name="raw" inputmode="decimal" value="{{ p.raw|amount }}" placeholder="$">
     <div class="small soft">{{ (p.raw_source|isodates) or "No raw price yet. Enter one, or identify the card." }}</div>
 
-    <label class="field">Graded sold prices</label>
-    <div class="fields">
+    <div class="field" id="price-graded">Graded sold prices</div>
+    <div class="fields" role="group" aria-labelledby="price-graded">
       {% for gr in grades %}
-      <div><span class="small">{{ grader.name }} {{ gr }}</span><input type="text" inputmode="decimal" name="{{ grader.id }}{{ gr }}" value="{{ (active.graded or {}).get(gr|string, '')|amount if (active.graded or {}).get(gr|string, '') != '' else '' }}" placeholder="$"></div>
+      <div><label class="small" for="price-{{ gr }}">{{ grader.name }} {{ gr }}</label><input type="text" inputmode="decimal" id="price-{{ gr }}" name="{{ grader.id }}{{ gr }}" value="{{ (active.graded or {}).get(gr|string, '')|amount if (active.graded or {}).get(gr|string, '') != '' else '' }}" placeholder="$"></div>
       {% endfor %}
     </div>
     <div class="small soft">{{ active.graded_source }}</div>
 
     <div class="fields" style="margin-top:8px">
-      <div class="span"><label class="field">Service tier</label>
-        <select name="tier">{% for t in fees.tiers if t.available %}<option value="{{ t.id }}" {% if t.id == tier.id %}selected{% endif %}>{{ t.name }}: ${{ "%.2f"|format(t.fee) }}</option>{% endfor %}</select></div>
-      <div><label class="field">Fee override</label><input type="text" name="fee_override" inputmode="decimal" value="{{ p.fee_override|amount }}" placeholder="tier fee"></div>
-      <div><label class="field">Shipping / card</label><input type="text" name="shipping" inputmode="decimal" value="{{ p.shipping|amount }}"></div>
-      <div><label class="field">Selling fees %</label><input type="text" name="sell_fee" inputmode="decimal" value="{{ p.sell_fee|amount }}"></div>
+      <div class="span"><label class="field" for="price-tier">Service tier</label>
+        <select id="price-tier" name="tier">{% for t in fees.tiers if t.available %}<option value="{{ t.id }}" {% if t.id == tier.id %}selected{% endif %}>{{ t.name }}: ${{ "%.2f"|format(t.fee) }}</option>{% endfor %}</select></div>
+      <div><label class="field" for="price-fee">Fee override</label><input type="text" id="price-fee" name="fee_override" inputmode="decimal" value="{{ p.fee_override|amount }}" placeholder="tier fee"></div>
+      <div><label class="field" for="price-shipping">Shipping / card</label><input type="text" id="price-shipping" name="shipping" inputmode="decimal" value="{{ p.shipping|amount }}"></div>
+      <div><label class="field" for="price-sell">Selling fees %</label><input type="text" id="price-sell" name="sell_fee" inputmode="decimal" value="{{ p.sell_fee|amount }}"></div>
     </div>
     <p class="small soft">Fees from {{ fees.verified_how }}, checked {{ fees.as_of }}. {{ tier.note }}{% if tier.note %}. {% endif %}Shipping is a rough placeholder.</p>
     <button type="submit" class="wide">Recalculate</button>
@@ -242,7 +266,7 @@
       </div>
     </details>
     <details class="row">
-      <summary><strong>Details</strong><span>Grade chances and how this was read</span>{{ icon("chevron", "chev") }}</summary>
+      <summary><h2 class="row-name">Details</h2><span>Grade chances and how this was read</span>{{ icon("chevron", "chev") }}</summary>
       <div class="row-body">
   {% if g %}<ul class="small">{% for line in g.explanation %}<li>{{ line }}</li>{% endfor %}</ul>
   <div class="bars">
@@ -252,7 +276,7 @@
   </div>
   <p class="small soft">Rough weights per grade, not yet calibrated against real PSA results.</p>{% endif %}
   {% for e in r.errors %}<p class="small soft">Note: {{ e }}</p>{% endfor %}
-  <p class="small soft">Checked {{ c.created_at|ts }}{% if r.cost_usd %} · model cost ≈ ${{ "%.3f"|format(r.cost_usd) }}{% endif %} · <a href="/api/check/{{ c.id }}">JSON</a></p>
+  <p class="small soft">Checked {{ c.created_at|ts }}{% if not hide_internals %}{% if r.cost_usd %} · model cost ≈ ${{ "%.3f"|format(r.cost_usd) }}{% endif %} · <a href="/api/check/{{ c.id }}">JSON</a>{% endif %}</p>
       </div>
     </details>
   </div>
