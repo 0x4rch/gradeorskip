@@ -237,7 +237,7 @@ def test_psa_comps_are_untouched_and_psa_never_fetches(monkeypatch):
 
 def _odds(monkeypatch, probs):
     real = app_module.grade_for
-    monkeypatch.setattr(app_module, "grade_for", lambda result, grader: {**real(result, grader), "probs": probs})
+    monkeypatch.setattr(app_module, "grade_for", lambda result, grader, in_hand=None: {**real(result, grader, in_hand), "probs": probs})
 
 
 def test_only_tag10_filled_and_a_lower_likely_grade_never_says_grade_it(monkeypatch):

@@ -308,8 +308,8 @@ if (app) {
     skipLink.hidden = !(shots.front && !shots.back && !skipBack);
   }
 
-  async function accept(side, blob, warnings, guided = false, debug = null, alts = []) {
-    shots[side] = { blob, warnings, guided, debug, alts };
+  async function accept(side, blob, warnings, guided = false, debug = null, alts = [], outlines = []) {
+    shots[side] = { blob, warnings, guided, debug, alts, outlines };
     if (side === "back") skipBack = false;
     if (navigator.vibrate) navigator.vibrate(40);
     render();
@@ -350,8 +350,12 @@ if (app) {
     for (const s of ["front", "back"]) {
       (shots[s] && shots[s].alts || []).forEach((b, i) => fd.append(`${s}_alt`, b, `${s}_alt${i}.jpg`));
     }
-    // Tell the server which photos came from the guided camera (card sits on the frame lines).
+    // Tell the server which photos came from the guided camera (card sits on the frame lines),
+    // and where the camera saw the card in each one (main photo first, then the alternates).
     fd.append("guided", ["front", "back"].filter((s) => shots[s] && shots[s].guided).join(","));
+    const outlines = {};
+    for (const s of ["front", "back"]) if (shots[s] && (shots[s].outlines || []).some(Boolean)) outlines[s] = shots[s].outlines;
+    if (Object.keys(outlines).length) fd.append("outlines", JSON.stringify(outlines));
     // Camera diagnostics (which lens, focus/steadiness readings before the shot) for tuning.
     const dbg = {};
     for (const s of ["front", "back"]) if (shots[s] && shots[s].debug) dbg[s] = shots[s].debug;
@@ -418,6 +422,10 @@ if (app) {
     const w = vr.width / scale, h = vr.height / scale;
     return { x: (vw - w) / 2, y: (vh - h) / 2, w, h, scale, vr };
   }
+
+  // The card's corners as fractions of a crop: sent with each photo so the server searches for the
+  // card's edges right where the camera saw them, not near a fixed line.
+  const outlineIn = (quad, crop) => quad.map(([x, y]) => [+((x - crop.x) / crop.w).toFixed(4), +((y - crop.y) / crop.h).toFixed(4)]);
 
   // Crop around the card found, with the same 8% margin the guide crop uses, so the server's
   // guided edge search finds the card where it expects it.
@@ -678,7 +686,7 @@ if (app) {
       const score = q.sharpness / peak + 0.2 * aligned - motion / 40;  // sharpness first
       const worst = st.burst.length >= KEEP + 1 ? st.burst[st.burst.length - 1].score : -Infinity;
       if (score > worst) {
-        st.burst.push({ cv: grab(crop), q, score });
+        st.burst.push({ cv: grab(crop), q, score, outline: found ? outlineIn(card.quad, crop) : null });
         st.burst.sort((a, b) => b.score - a.score);
         st.burst.length = Math.min(st.burst.length, KEEP + 1);
       }
@@ -703,8 +711,9 @@ if (app) {
       frames = [];
       for (let i = 0; i < KEEP; i++) {
         if (i) await new Promise((r) => setTimeout(r, 60));
-        const cv = grab(st.crop && st.lost < 5 ? st.crop : guideCrop());
-        frames.push({ cv, q: measure(cv), score: 0 });
+        const recent = st.crop && st.lost < 5;
+        const cv = grab(recent ? st.crop : guideCrop());
+        frames.push({ cv, q: measure(cv), score: 0, outline: recent && st.quad ? outlineIn(st.quad, st.crop) : null });
       }
       frames.sort((a, b) => b.q.sharpness - a.q.sharpness);
     }
@@ -718,7 +727,8 @@ if (app) {
     st.burst = [];
     lab("shot", { side, auto, debug, video });
     const warn = side === "tilt" ? [] : warnings.length ? warnings : problems(q);  // tilt: glare is wanted
-    await accept(side, blobs[0], warn, side !== "tilt", debug, side === "tilt" ? [] : blobs.slice(1));
+    await accept(side, blobs[0], warn, side !== "tilt", debug, side === "tilt" ? [] : blobs.slice(1),
+                 side === "tilt" ? [] : frames.map((f) => f.outline || null));
     if (side === "tilt") {
       closeCamera();
     } else if (side === "front" && !shots.back && !skipBack) {

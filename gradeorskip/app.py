@@ -14,14 +14,14 @@ from fastapi.templating import Jinja2Templates
 
 from . import db
 from .config import BRAND, ROOT, SOURCE_URL, TAG_ENABLED
-from .pipeline import CHECKS_DIR, run_check
+from .pipeline import CHECKS_DIR, parse_outlines, run_check
 from .providers.condition import get_provider
 from .providers.prices import (CardLookup, PriceChartingProvider, comps_links, graded_prices, identify_card,
                                PC_SOURCE, priced_from_pricecharting, pretty_variant, pricecharting_for_card,
                                pricecharting_listing, scraping_enabled, TAG_NO_PRICES, tag_comps_for_card, tag_source,
                                variant_prices)
 from .grading import GRADERS
-from .pipeline import grade_for
+from .pipeline import IN_HAND, grade_for
 from .roi import RoiInput, compute_roi, load_fees, yes_path
 
 app = FastAPI(title=BRAND)
@@ -127,6 +127,11 @@ def _grader(check: dict) -> dict:
     return GRADERS[(check["prices"] or {}).get("grader", "psa") if TAG_ENABLED else "psa"]
 
 
+def _grade(check: dict, grader_id: str) -> dict | None:
+    """The estimate, with whatever the owner has said they see on the card in hand."""
+    return grade_for(check["result"], grader_id, (check["prices"] or {}).get("in_hand"))
+
+
 def _active(prices: dict) -> dict:
     """Comps and tier for the chosen grader. A TAG slab sells at its own price, so PSA comps aren't reused."""
     return _tag_prices(prices) if prices.get("grader") == "tag" else prices
@@ -161,7 +166,7 @@ def _roi(check: dict, tier_id: str | None = None) -> tuple[dict | None, dict]:
     active = _active(prices)
     tier = next((t for t in fees["tiers"] if t["id"] == (tier_id or active.get("tier")) and t.get("available", True)),
                 None) or _default_tier(fees)
-    grade = grade_for(check["result"], grader["id"])
+    grade = _grade(check, grader["id"])
     if not grade:
         return None, tier
     override = None if tier_id else prices.get("fee_override")
@@ -263,7 +268,7 @@ def _row(check: dict) -> dict:
     return {"id": check["id"], "label": _display_label(check), "verdict": verdict or "No answer",
             "vclass": VERDICT_CLASS.get(verdict, "v-need"), "image": _thumb(check), "batch_id": check.get("batch_id"), "centering": _front_centering(check),
             "gain": roi["gain"] if roi and roi.get("ok") else None, "created_at": check["created_at"],
-            "grade": (grade_for(check["result"], _grader(check)["id"]) or {}).get("label")}
+            "grade": (_grade(check, _grader(check)["id"]) or {}).get("label")}
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -276,13 +281,15 @@ def index(request: Request):
 async def create_check(front: UploadFile = File(...), back: UploadFile | None = File(None),
                        card_id: str = Form(""), label: str = Form(""), guided: str = Form(""),
                        capture_debug: str = Form(""), front_alt: list[UploadFile] | None = File(None),
-                       back_alt: list[UploadFile] | None = File(None), tilt: UploadFile | None = File(None)):
+                       back_alt: list[UploadFile] | None = File(None), tilt: UploadFile | None = File(None),
+                       outlines: str = Form("")):
     f, b = await _read(front), await _read(back)
     if not f:
         raise HTTPException(400, "A front photo is required")
     alts = {"front": [x for x in [await _read(u) for u in (front_alt or [])[:4]] if x],
             "back": [x for x in [await _read(u) for u in (back_alt or [])[:4]] if x] if b else []}
-    result = run_check(f, b, guided={x for x in guided.split(",") if x in ("front", "back")}, alts=alts, tilt=await _read(tilt))
+    result = run_check(f, b, guided={x for x in guided.split(",") if x in ("front", "back")}, alts=alts,
+                       tilt=await _read(tilt), outlines=parse_outlines(outlines))
     if capture_debug:  # camera diagnostics from the phone, kept for tuning the capture flow
         try:
             result["capture_debug"] = json.loads(capture_debug[:50_000])
@@ -353,7 +360,7 @@ def show_check(request: Request, check_id: str, msg: str = ""):
     return templates.TemplateResponse(request, "check.html", {
         "c": check, "r": check["result"], "roi": roi, "tier": tier, "fees": load_fees(grader["id"]),
         "grader": grader, "graders": GRADERS.values() if TAG_ENABLED else [], "active": _active(check["prices"]),
-        "grade": grade_for(check["result"], grader["id"]),
+        "grade": _grade(check, grader["id"]), "in_hand": check["prices"].get("in_hand") or {},
         "card_image": _thumb(check),
         "tier_opts": tier_opts, "yes": _yes_view(check, roi, tier, tier_opts),
         "grades": GRADES, "status": _status(), "msg": msg,
@@ -452,6 +459,21 @@ async def set_tier(check_id: str, tier: str = Form(...)):
     prices["fee_override"] = None
     db.update_check(check_id, prices=prices)
     return RedirectResponse(f"/check/{check_id}#answer", status_code=303)
+
+
+@app.post("/check/{check_id}/condition")
+async def set_in_hand(check_id: str, corners: str = Form(""), edges: str = Form(""), surface: str = Form("")):
+    """What the owner sees on the card itself. Empty means "use the photo read" for that area."""
+    check = db.get_check(check_id)
+    if not check:
+        raise HTTPException(404)
+    calls = {"corners": corners, "edges": edges, "surface": surface}
+    if any(v not in ("", *IN_HAND) for v in calls.values()):
+        raise HTTPException(400, "Unknown condition")
+    prices = check["prices"] or _default_prices(check["card"])
+    prices["in_hand"] = {k: v for k, v in calls.items() if v}
+    db.update_check(check_id, prices=prices)
+    return RedirectResponse(f"/check/{check_id}#condition", status_code=303)
 
 
 @app.post("/check/{check_id}/grader")

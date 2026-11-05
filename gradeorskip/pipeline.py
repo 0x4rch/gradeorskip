@@ -1,6 +1,7 @@
 """One "check": front + back photos -> centering, condition, grade range."""
 from __future__ import annotations
 
+import json
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 
@@ -116,7 +117,28 @@ def combine_centering(cens: list, frames_sent: int = 1) -> dict:
     return out
 
 
-def _pick_frame(datas: list[bytes], guided: bool):
+def parse_outlines(raw: str) -> dict[str, list]:
+    """The phone's per-frame card outlines from the upload form, kept only if well-formed:
+    {side: [4 [x, y] points or None, ...]} for at most 5 frames a side. Anything else is dropped."""
+    try:
+        data = json.loads(raw[:20_000]) if raw else {}
+    except ValueError:
+        return {}
+    out = {}
+    for side in ("front", "back"):
+        frames = data.get(side) if isinstance(data, dict) else None
+        if not isinstance(frames, list):
+            continue
+        keep = []
+        for q in frames[:5]:
+            ok = (isinstance(q, list) and len(q) == 4 and all(isinstance(p, list) and len(p) == 2
+                  and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in p) for p in q))
+            keep.append(q if ok else None)
+        out[side] = keep
+    return out
+
+
+def _pick_frame(datas: list[bytes], guided: bool, outlines: list | None = None):
     """Of several burst frames of one side, the one whose centering measures most reliably
     (then the sharpest card). Returns (img, centering, card, overlay, error, index, all centerings)."""
     best, best_key = None, None
@@ -129,7 +151,8 @@ def _pick_frame(datas: list[bytes], guided: bool):
                 best, best_key = (None, None, None, None, e, i), (-1,)
             continue
         try:
-            cen, card, overlay = measure_centering(img, guided=guided)
+            outline = outlines[i] if outlines and i < len(outlines) else None
+            cen, card, overlay = measure_centering(img, guided=guided, outline=outline)
             sharp = float(cv2.Laplacian(cv2.cvtColor(card, cv2.COLOR_BGR2GRAY), cv2.CV_64F).var())
             key = (1, cen.crop_ok, cen.confidence, sharp)
             cand = (img, cen, card, overlay, None, i)
@@ -155,21 +178,32 @@ def _centering_inputs(result: dict, grader: str = "psa") -> tuple[dict, object, 
     return trusted, cap, min((c["confidence"] for c in trusted.values()), default=1.0)
 
 
-def grade_for(result: dict, grader: str) -> dict | None:
-    """The stored estimate is PSA's. Other graders re-run it from the same measurements and findings."""
-    if grader == "psa" or not result.get("grade"):
+IN_HAND = ("none", "minor", "moderate", "major")
+
+
+def grade_for(result: dict, grader: str, in_hand: dict | None = None) -> dict | None:
+    """The stored estimate is PSA's. Other graders re-run it from the same measurements and findings.
+
+    in_hand: what the owner sees on the card itself, per area ("none".."major"). It replaces the
+    photo read for that area on both sides: a person judges whitening and nicks better than a camera."""
+    in_hand = {k: v for k, v in (in_hand or {}).items() if k in ("corners", "edges", "surface") and v in IN_HAND}
+    if not result.get("grade") or (grader == "psa" and not in_hand):
         return result.get("grade")
     failed = any(e.startswith("Condition check failed") for e in result.get("errors", []))
     findings = [] if failed else [
         Finding(a["area"], side, a["severity"], float(a["confidence"]), a.get("notes", ""), a.get("locations", []))
-        for side, s in result["sides"].items() for a in (s.get("condition") or {}).get("result", {}).get("areas", [])]
+        for side, s in result["sides"].items() for a in (s.get("condition") or {}).get("result", {}).get("areas", [])
+        if a["area"] not in in_hand]
+    findings += [Finding(area, "front", sev, 1.0, "seen in hand", in_hand=True) for area, sev in in_hand.items()]
     _, cap, conf = _centering_inputs(result, grader)
     return estimate_grade(cap, findings or None, conf, result.get("inspection", "good"), grader).to_dict()
 
 
 def run_check(front: bytes, back: bytes | None, use_llm: bool = True, guided: set[str] | None = None,
-              alts: dict[str, list[bytes]] | None = None, tilt: bytes | None = None) -> dict:
+              alts: dict[str, list[bytes]] | None = None, tilt: bytes | None = None,
+              outlines: dict[str, list] | None = None) -> dict:
     """guided: sides captured with the live guided camera (card expected on the frame lines).
+    outlines: per side, the card outline the camera found in each frame (main first, then alts).
     alts: extra burst frames per side; the best-measuring frame is used.
     tilt: optional photo of the front tilted under a light, shown to the model for surface defects."""
     check_id = uuid.uuid4().hex[:12]
@@ -189,7 +223,7 @@ def run_check(front: bytes, back: bytes | None, use_llm: bool = True, guided: se
         side_out: dict = {}
         result["sides"][side] = side_out
         datas = [data] + list((alts or {}).get(side) or [])
-        img, cen, card, overlay, err, idx, all_cens = _pick_frame(datas, side in (guided or set()))
+        img, cen, card, overlay, err, idx, all_cens = _pick_frame(datas, side in (guided or set()), (outlines or {}).get(side))
         if img is None:
             result["errors"].append(f"{side}: {err}")
             side_out["error"] = str(err)

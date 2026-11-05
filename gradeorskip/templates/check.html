@@ -188,6 +188,27 @@
   {% endfor %}
   </div>
   {% endif %}
+  {# Optional: the owner's own read. A person sees whitening and nicks in hand far better than a camera. #}
+  <form method="post" action="/check/{{ c.id }}/condition" class="in-hand">
+    <h3>What you see in hand</h3>
+    <p class="small soft">A camera can't judge fine whitening or tiny nicks. If you've looked at the card under a light, set what you see and the grade follows.</p>
+    <div class="fields">
+    {% for area, look in [("corners", "whitening, dings"), ("edges", "whitening, nicks, chips"), ("surface", "scratches, dents, creases")] %}
+      {% set v = in_hand.get(area, "") %}
+      <div>
+        <label class="field" for="hand-{{ area }}">{{ area|capitalize }} <span class="soft">· {{ look }}</span></label>
+        <select id="hand-{{ area }}" name="{{ area }}" data-autosubmit>
+          <option value="" {% if not v %}selected{% endif %}>Photo read</option>
+          <option value="none" {% if v == "none" %}selected{% endif %}>Clean</option>
+          <option value="minor" {% if v == "minor" %}selected{% endif %}>Light wear: a speck or one tiny nick</option>
+          <option value="moderate" {% if v == "moderate" %}selected{% endif %}>Visible wear</option>
+          <option value="major" {% if v == "major" %}selected{% endif %}>Damage: a bend, crease or tear</option>
+        </select>
+      </div>
+    {% endfor %}
+    </div>
+    <noscript><button class="secondary" type="submit">Update the grade</button></noscript>
+  </form>
       </div>
     </details>
     {% endif %}

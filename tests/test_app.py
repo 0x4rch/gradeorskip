@@ -58,7 +58,7 @@ def test_unreliable_centering_does_not_cap_grade(monkeypatch):
     from gradeorskip import pipeline
     real = pipeline.measure_centering
 
-    def shaky(img, guided=False):
+    def shaky(img, guided=False, outline=None):
         res, card, ov = real(img, guided)
         res.confidence = 0.3
         return res, card, ov
@@ -88,7 +88,7 @@ def test_condition_still_runs_when_card_outline_not_found(monkeypatch):
     real = pipeline.measure_centering
     calls = {"n": 0}
 
-    def flaky(img, guided=False):
+    def flaky(img, guided=False, outline=None):
         calls["n"] += 1
         if calls["n"] == 2:  # the back
             raise CardNotFound("no outline")

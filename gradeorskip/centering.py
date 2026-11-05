@@ -207,7 +207,7 @@ def _line_candidates(g: np.ndarray, lo: int, hi: int, a0: int, a1: int, thr: int
     return out
 
 
-def find_card_quad_lines(img: np.ndarray, prior: tuple | None = None) -> tuple[np.ndarray, float] | None:
+def find_card_quad_lines(img: np.ndarray, prior: tuple | None = None, band: float = 0.07) -> tuple[np.ndarray, float] | None:
     """Find the card from its four straight edges. With `prior` (x0, y0, x1, y1, fractions of the
     image), each edge is searched only near where the guided camera put it; without, in the
     outer 35% of the image. Returns (quad tl/tr/br/bl, quality 0-1) or None."""
@@ -218,7 +218,7 @@ def find_card_quad_lines(img: np.ndarray, prior: tuple | None = None) -> tuple[n
     h, w = small.shape[:2]
     gx, gy = _color_grad(small)
     if prior:
-        bx, by = 0.07 * w, 0.07 * h
+        bx, by = band * w, band * h
         bands = {"l": (prior[0] * w - bx, prior[0] * w + bx), "r": (prior[2] * w - bx, prior[2] * w + bx),
                  "t": (prior[1] * h - by, prior[1] * h + by), "b": (prior[3] * h - by, prior[3] * h + by)}
     else:
@@ -303,7 +303,24 @@ def corners_intact(card: np.ndarray, min_dist: float = 45.0) -> bool:
     return all(np.linalg.norm(np.median(c.reshape(-1, 3), axis=0) - ref) >= min_dist for c in patches)
 
 
-def normalize_card(img: np.ndarray, guided: bool = False) -> tuple[np.ndarray, str, np.ndarray | None]:
+def outline_prior(outline) -> tuple | None:
+    """The phone's own card outline (4 points as fractions of the photo, any order) as a prior
+    box: each side at the midpoint of its two corners. None if it isn't a plausible card."""
+    try:
+        pts = np.asarray(outline, dtype=float).reshape(4, 2)
+    except (TypeError, ValueError):
+        return None
+    if not np.isfinite(pts).all() or (pts < -0.1).any() or (pts > 1.1).any():
+        return None
+    c = pts.mean(axis=0)
+    pts = pts[np.argsort(np.arctan2(pts[:, 1] - c[1], pts[:, 0] - c[0]))]  # clockwise from the left (y down)
+    pts = np.roll(pts, -int(np.argmin(pts.sum(axis=1))), axis=0)  # start top-left: tl, tr, br, bl
+    tl, tr, br, bl = pts
+    box = ((tl[0] + bl[0]) / 2, (tl[1] + tr[1]) / 2, (tr[0] + br[0]) / 2, (bl[1] + br[1]) / 2)
+    return box if box[2] - box[0] > 0.3 and box[3] - box[1] > 0.3 else None
+
+
+def normalize_card(img: np.ndarray, guided: bool = False, outline=None) -> tuple[np.ndarray, str, np.ndarray | None]:
     """Return (warped card, detection method, quad in source coords).
 
     Guided-camera photos: straight-edge search near the frame lines first.
@@ -312,6 +329,11 @@ def normalize_card(img: np.ndarray, guided: bool = False) -> tuple[np.ndarray, s
     nonsense on real phone photos.
     """
     attempts = [("lines-guided", lambda: find_card_quad_lines(img, GUIDE_BOX))] if guided else []
+    if (box := outline_prior(outline)) is not None:
+        # The phone found this card already: search each edge within 3% of where it saw it. That
+        # keeps the search off a border's inner edge (~4-5% inside), which a dark-blue back on dark
+        # fabric lost to when the crop ran large (capture lab, 2026-11-04).
+        attempts.insert(0, ("lines-outline", lambda: find_card_quad_lines(img, box, band=0.03)))
     attempts += [("contour", lambda: find_card_quad(img)), ("lines", lambda: find_card_quad_lines(img))]
     # Hypothesise and verify: take the first outline whose corners check out, else the first found.
     fallback = None
@@ -620,9 +642,10 @@ def thin_frame(card: np.ndarray) -> tuple[Borders, float] | None:
     return b, 0.8
 
 
-def measure_centering(img: np.ndarray, guided: bool = False) -> tuple[CenteringResult, np.ndarray, np.ndarray]:
-    """Measure one side. Returns (result, warped card, overlay image)."""
-    card, method, quad = normalize_card(img, guided)
+def measure_centering(img: np.ndarray, guided: bool = False, outline=None) -> tuple[CenteringResult, np.ndarray, np.ndarray]:
+    """Measure one side. Returns (result, warped card, overlay image). outline: the card's corners
+    as the phone's live camera found them, as fractions of this photo (a search hint only)."""
+    card, method, quad = normalize_card(img, guided, outline)
     borders, conf, warnings = measure_borders(card)
     crop_ok = corners_intact(card)
     problems = verify_borders(card, borders)

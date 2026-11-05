@@ -105,3 +105,11 @@ def test_tag_centering_is_tighter_than_psa(front, back, grade):
 def test_tag_estimate_is_labelled_tag():
     est = estimate_grade(centering_cap(58, 50, "tag"), None, grader="tag")
     assert est.label.startswith("TAG") and est.centering.grade == 9
+
+
+def test_in_hand_calls_count_as_given():
+    # The camera's minor corner call doesn't count; the owner's, from the card in hand, does.
+    assert condition_ceiling([F("minor")])[0] == 10
+    hand = Finding("corners", "front", "minor", 1.0, "seen in hand", in_hand=True)
+    ceiling, reason, _ = condition_ceiling([hand])
+    assert ceiling == 9 and reason == "corners (seen in hand): minor"

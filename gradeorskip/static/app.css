@@ -239,6 +239,10 @@ td.num { white-space: nowrap; }
 .row-body { padding: 2px 0 14px; }
 .row-body > p:first-child { margin-top: 0; }
 .variant-form { margin-top: 6px; }
+.in-hand { margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--line); }
+.in-hand h3 { margin: 0 0 4px; }
+.in-hand .fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 12px; }
+.in-hand .field .soft { font-weight: 400; }
 .service { margin: 14px 0; }
 .yes-path { margin: 14px 0; padding: 12px 14px; background: var(--surface); border-radius: var(--r-s); }
 .yes-path p { margin: 4px 0 0; }
@@ -271,6 +275,7 @@ body:has(.next) footer { padding-bottom: calc(92px + env(safe-area-inset-bottom)
 @media (max-width: 680px) {
   .grid2 { grid-template-columns: minmax(0, 1fr); }
   .prices-form .fields { grid-template-columns: 1fr 1fr; }
+  .in-hand .fields { grid-template-columns: minmax(0, 1fr); }
 }
 @media (min-width: 760px) {
   .answer-layout { grid-template-columns: 300px minmax(0, 1fr); gap: 36px; align-items: start; padding-top: 16px; }

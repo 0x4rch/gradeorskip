@@ -99,6 +99,7 @@ class Finding:
     confidence: float
     notes: str = ""
     locations: list = field(default_factory=list)
+    in_hand: bool = False  # the owner's own call from the card in hand: counts as given
 
 
 LOW_CONFIDENCE = 0.5
@@ -112,6 +113,8 @@ def effective_severity(f: Finding) -> str:
     cards (capture lab, 2026-11-04) every corner and edge call was false: sparkle and side light
     look like whitening at camera resolution, while a person sees it in hand at a glance. The
     damage the model does catch there (tears, chips) comes back moderate or worse."""
+    if f.in_hand:
+        return f.severity
     if f.area in ("corners", "edges") and f.severity == "minor":
         return "none"
     if f.confidence < LOW_CONFIDENCE and f.severity != "none":
@@ -129,7 +132,7 @@ def condition_ceiling(findings: list[Finding]) -> tuple[int, str, float]:
         c = SEVERITY_CEILING.get(sev, 10)
         if c < ceiling:
             hedge = f" (model unsure: called {f.severity})" if sev != f.severity else ""
-            ceiling, reason = c, f"{f.side} {f.area}: {sev}{hedge}"
+            ceiling, reason = c, (f"{f.area} (seen in hand): {sev}" if f.in_hand else f"{f.side} {f.area}: {sev}{hedge}")
     minors = [sev for sev in effective if sev == "minor"]
     if ceiling == 9 and len(minors) >= 2:
         ceiling, reason = 8, f"{len(minors)} areas with minor issues"
@@ -189,7 +192,7 @@ def estimate_grade(cap: CenteringCap, findings: list[Finding] | None,
         ceil, reason, conf = condition_ceiling(findings)
         top = min(cap.grade, ceil)
         expl.append(f"Condition findings suggest at most about a {ceil} ({reason}).")
-        if any(f.area in ("corners", "edges") and f.severity == "minor" for f in findings):
+        if any(f.area in ("corners", "edges") and f.severity == "minor" and not f.in_hand for f in findings):
             expl.append("Small corner or edge marks in the photos aren't counted: a camera can't tell them from "
                         "sparkle or reflected light. Check the corners and edges in hand.")
         weights = SPREAD_ASSESSED
