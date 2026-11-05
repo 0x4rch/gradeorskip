@@ -16,7 +16,7 @@ from . import db
 from .config import BRAND, ROOT, SOURCE_URL, TAG_ENABLED
 from .pipeline import CHECKS_DIR, parse_outlines, run_check
 from .providers.condition import get_provider
-from .providers.prices import (CardLookup, PriceChartingProvider, comps_links, graded_prices, identify_card,
+from .providers.prices import (CardLookup, PriceChartingProvider, api_raw_price, comps_links, graded_prices, identify_card,
                                PC_SOURCE, priced_from_pricecharting, pretty_variant, pricecharting_for_card,
                                pricecharting_listing, scraping_enabled, TAG_NO_PRICES, tag_comps_for_card, tag_source,
                                variant_prices)
@@ -108,7 +108,11 @@ def _default_prices(card: dict | None) -> dict:
         prices["graded_source"] = src
         if not prices["raw"]:
             # The card databases have no market price for some cards (new promos, Japanese):
-            # take the ungraded price from the same PriceCharting listing.
+            # take the ungraded price from PriceCharting, through the API where there's a key.
+            raw = api_raw_price(card)
+            if raw:
+                prices["raw"], prices["raw_source"] = raw, "PriceCharting API, ungraded"
+        if not prices["raw"]:
             pc = pricecharting_for_card(card) if not card.get("pc_graded") else None
             if pc and pc["prices"].get("raw"):
                 prices["raw"] = pc["prices"]["raw"]

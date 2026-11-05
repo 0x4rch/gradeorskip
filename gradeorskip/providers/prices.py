@@ -173,6 +173,7 @@ class CardLookup:
 # ---------------------------------------------------------- graded prices
 
 _MIN_GAP = 1.1  # PriceCharting allows one call a second and can revoke access beyond that
+_LISTINGS: dict[str, tuple[float, dict]] = {}  # query -> (when, answer): one call serves graded and raw
 _pace_lock = threading.Lock()
 _last_call = 0.0
 
@@ -214,18 +215,27 @@ class PriceChartingProvider:
     def available(self) -> bool:
         return bool(os.environ.get("PRICECHARTING_API_KEY"))
 
-    def graded(self, card: dict) -> dict[int, float]:
+    def listing(self, card: dict) -> dict | None:
+        """This card's prices in dollars: "raw" (ungraded) and grades 7-10. None if the API's
+        match isn't this card."""
         token = os.environ["PRICECHARTING_API_KEY"]
         q = f"pokemon {card['name']} {card.get('set') or ''} {card.get('number') or ''}".strip()
-        _pace()
-        data = _get_json("https://www.pricecharting.com/api/product", {"t": token, "q": q})
+        hit = _LISTINGS.get(q)
+        if hit and time.monotonic() - hit[0] < 600:
+            data = hit[1]
+        else:
+            _pace()
+            data = _get_json("https://www.pricecharting.com/api/product", {"t": token, "q": q})
+            _LISTINGS[q] = (time.monotonic(), data)
         if not is_same_card(card, data):
-            return {}
-        out = {}
-        for grade, fld in self.FIELDS.items():
-            if data.get(fld):
-                out[grade] = round(int(data[fld]) / 100.0, 2)
+            return None
+        out = {grade: round(int(data[fld]) / 100.0, 2) for grade, fld in self.FIELDS.items() if data.get(fld)}
+        if data.get("loose-price"):
+            out["raw"] = round(int(data["loose-price"]) / 100.0, 2)
         return out
+
+    def graded(self, card: dict) -> dict[int, float]:
+        return {g: v for g, v in (self.listing(card) or {}).items() if g != "raw"}
 
 
 def _pc_match(card: dict) -> dict | None:
@@ -240,6 +250,17 @@ def pricecharting_for_card(card: dict) -> dict | None:
     try:
         return _pc_match(card)
     except httpx.HTTPError:
+        return None
+
+
+def api_raw_price(card: dict | None) -> float | None:
+    """The ungraded price from the PriceCharting API, when there's a key and it matches this card."""
+    pc = PriceChartingProvider()
+    if not card or not pc.available():
+        return None
+    try:
+        return (pc.listing(card) or {}).get("raw")
+    except (httpx.HTTPError, ValueError, KeyError):
         return None
 
 

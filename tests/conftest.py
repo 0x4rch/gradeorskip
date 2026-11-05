@@ -9,4 +9,5 @@ sys.path.insert(0, str(ROOT))
 os.environ["GRADEORSKIP_DATA_DIR"] = tempfile.mkdtemp(prefix="gradeorskip-test-")
 os.environ["GRADEORSKIP_LLM_PROVIDER"] = "none"
 os.environ["GRADEORSKIP_SCRAPE_PRICECHARTING"] = "0"  # no network in tests
+os.environ["PRICECHARTING_API_KEY"] = ""  # set before .env loads (it never overrides), so no paid API calls
 FIXTURES = ROOT / "tests" / "fixtures" / "synthetic"
