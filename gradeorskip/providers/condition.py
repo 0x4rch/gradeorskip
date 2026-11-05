@@ -13,7 +13,7 @@ import os
 import time
 from pathlib import Path
 
-from ..config import DATA_DIR
+from ..config import DATA_DIR, write_cache
 
 PROMPT_VERSION = "v7b-phone-frames"  # v6 + phone-camera frames: specks at corners/edges are not whitening; tears always count
 MAX_SIDE = 1024
@@ -161,8 +161,7 @@ class ConditionProvider:
             "cost_usd": estimate_cost(self.model, usage), "seconds": round(time.time() - t0, 2),
             "cached": False,
         }
-        CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(out))
+        write_cache(path, json.dumps(out))
         return out
 
     def _call(self, jpeg: bytes, side: str, extras: list[tuple[str, bytes]]) -> tuple[dict, dict]:

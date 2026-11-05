@@ -1,3 +1,4 @@
+import logging
 import os
 from pathlib import Path
 
@@ -8,6 +9,16 @@ load_dotenv(ROOT / ".env")  # never committed; see README
 DATA_DIR = Path(os.environ.get("GRADEORSKIP_DATA_DIR", ROOT / "data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 BRAND = os.environ.get("GRADEORSKIP_BRAND", "Grade or Skip")
+
+
+def write_cache(path: Path, text: str) -> None:
+    """Caches only save repeat work, so a failed write must never fail a check. On the hosted site a
+    cache file left by a maintenance command run as root broke a scan with PermissionError (2026-11-05)."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+    except OSError as e:
+        logging.getLogger("gradeorskip.cache").warning("Couldn't write cache %s: %s", path.name, e)
 # TAG is off until a source covers TAG 9 and below: sold data only reached TAG 10 on real cards.
 # The AGPL asks anyone running a modified copy to offer its source; point this at yours.
 SOURCE_URL = os.environ.get("GRADEORSKIP_SOURCE_URL", "https://github.com/0x4rch/gradeorskip")

@@ -21,7 +21,7 @@ from urllib.parse import quote
 
 import httpx
 
-from ..config import DATA_DIR
+from ..config import DATA_DIR, write_cache
 
 CACHE_DIR = DATA_DIR / "cache" / "http"
 TTL = 6 * 3600
@@ -36,8 +36,7 @@ def _get_json(url: str, params: dict | None = None, headers: dict | None = None,
     r = httpx.get(url, params=params, headers={**UA, **(headers or {})}, timeout=timeout)
     r.raise_for_status()
     data = r.json()
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data))
+    write_cache(path, json.dumps(data))
     return data
 
 
@@ -411,8 +410,7 @@ def _get_html(url: str, params: dict | None = None) -> tuple[str, str]:
         return d["html"], d["url"]
     r = httpx.get(url, params=params, headers=UA, timeout=15, follow_redirects=True)
     r.raise_for_status()
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"html": r.text, "url": str(r.url)}))
+    write_cache(path, json.dumps({"html": r.text, "url": str(r.url)}))
     return r.text, str(r.url)
 
 

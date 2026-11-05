@@ -12,6 +12,7 @@ Calls are paced to one a second.
 from __future__ import annotations
 
 import argparse
+import os
 
 from . import db
 from .providers.prices import PriceChartingProvider
@@ -33,6 +34,10 @@ def card_for(check: dict) -> dict | None:
 
 def backfill(apply: bool = False, log=print) -> dict:
     from . import app  # the default price sheet (tier, shipping, fees) for checks that never had one
+
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        # Root leaves cache files the app can't rewrite (it broke a live scan on 2026-11-05).
+        raise SystemExit("Don't run this as root. On the hosted site: su app -s /bin/sh -c 'python -m gradeorskip.backfill'")
 
     pc = PriceChartingProvider()
     if not pc.available():

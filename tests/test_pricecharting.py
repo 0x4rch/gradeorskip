@@ -48,3 +48,20 @@ def test_backfill_fills_missing_prices_and_never_touches_typed_ones(monkeypatch)
     typed = db.get_check("bf0000000002")["prices"]
     assert typed["raw"] == 50.0 and typed["graded"] == {"10": 999.0}
     assert db.get_check("bf0000000003")["prices"] in ({}, None)
+
+
+def test_a_cache_that_cant_be_written_never_fails_a_lookup(monkeypatch, tmp_path):
+    """A cache file the app can't write (left by a command run as root) broke a live scan."""
+    monkeypatch.setattr(prices, "CACHE_DIR", tmp_path)
+
+    class Answer:
+        def raise_for_status(self): pass
+        def json(self): return {"ok": True}
+
+    monkeypatch.setattr(prices.httpx, "get", lambda *a, **k: Answer())
+    tmp_path.chmod(0o500)  # read-only: every write fails
+    try:
+        assert prices._get_json("https://example.test/x", {"q": "a"}) == {"ok": True}
+    finally:
+        tmp_path.chmod(0o700)
+
