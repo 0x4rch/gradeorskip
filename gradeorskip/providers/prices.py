@@ -197,7 +197,15 @@ def is_same_card(card: dict, data: dict) -> bool:
         return False
     if (card.get("language") or "en") == "en" and any(w in console for w in ("japanese", "korean", "chinese")):
         return False
-    return all(w in title.split() for w in words) and re.search(rf"#0*{re.escape(number)}\b", title) is not None
+    if not (all(w in title.split() for w in words) and re.search(rf"#0*{re.escape(number)}\b", title) is not None):
+        return False
+    # "Pikachu [Pokemon Together] #25", "Charizard [1st Edition] #4": a printing this card isn't. Its words must
+    # come from the card itself (name, stamp, 1st Edition), or it's another printing's price.
+    variant = set(re.findall(r"[a-z0-9]+", " ".join(re.findall(r"\[([^\]]*)\]", (data.get("product-name") or "").lower()))))
+    allowed = set(words) | _stamp_words(card.get("stamp") or "")
+    if "1st" in (card.get("raw_variant") or "").lower():
+        allowed |= {"1st", "edition"}
+    return variant <= allowed
 
 
 class PriceChartingProvider:
@@ -227,7 +235,19 @@ class PriceChartingProvider:
             data = _get_json("https://www.pricecharting.com/api/product", {"t": token, "q": q})
             _LISTINGS[q] = (time.monotonic(), data)
         if not is_same_card(card, data):
-            return None
+            # The single closest match was another card or printing: look through the whole result list.
+            hit = _LISTINGS.get("all|" + q)
+            if hit and time.monotonic() - hit[0] < 600:
+                found = hit[1]
+            else:
+                _pace()
+                found = _get_json("https://www.pricecharting.com/api/products", {"t": token, "q": q})
+                _LISTINGS["all|" + q] = (time.monotonic(), found)
+            same = [p for p in found.get("products") or [] if is_same_card(card, p)]
+            if not same:
+                return None
+            set_words = set(re.findall(r"[a-z0-9]+", (card.get("set") or "").lower()))
+            data = max(same, key=lambda p: len(set_words & set(re.findall(r"[a-z0-9]+", (p.get("console-name") or "").lower()))))
         out = {grade: round(int(data[fld]) / 100.0, 2) for grade, fld in self.FIELDS.items() if data.get(fld)}
         if data.get("loose-price"):
             out["raw"] = round(int(data["loose-price"]) / 100.0, 2)
@@ -243,12 +263,12 @@ def _pc_match(card: dict) -> dict | None:
 
 
 def pricecharting_for_card(card: dict) -> dict | None:
-    """PriceCharting listing (raw + graded) for a database card, from its public page."""
-    if not scraping_enabled():
+    """PriceCharting listing (raw + graded) for a database card: its public page, or the paid API's search."""
+    if not listings_enabled():
         return None
     try:
         return _pc_match(card)
-    except httpx.HTTPError:
+    except (httpx.HTTPError, ValueError, KeyError):
         return None
 
 
@@ -265,6 +285,8 @@ def api_raw_price(card: dict | None) -> float | None:
 
 def graded_prices(card: dict | None) -> tuple[dict[int, float], str]:
     """(prices by grade, source description). Empty dict means manual entry is needed."""
+    if card and card.get("pc_graded"):  # this exact listing's prices: a fresh search could land on another printing
+        return dict(card["pc_graded"]), f"{PC_SOURCE}: {card['pc_url']}" if card.get("pc_url") else PC_SOURCE
     pc = PriceChartingProvider()
     if card and pc.available():
         try:
@@ -273,8 +295,6 @@ def graded_prices(card: dict | None) -> tuple[dict[int, float], str]:
                 return prices, "PriceCharting API"
         except (httpx.HTTPError, ValueError, KeyError):
             return {}, "PriceCharting lookup failed. Enter comps manually."
-    if card and card.get("pc_graded"):
-        return dict(card["pc_graded"]), PC_SOURCE
     if card:
         pc = pricecharting_for_card(card)
         if pc:
@@ -397,8 +417,55 @@ def comps_links(card: dict | None, guess: dict | None = None, grader: str = "PSA
 PC_BASE = "https://www.pricecharting.com"
 # Table cell ids on a PriceCharting card page -> grade (their API docs use the same mapping).
 PC_FIELDS = {"used_price": "raw", "complete_price": 7, "new_price": 8, "graded_price": 9, "manual_only_price": 10}
-PC_SOURCE = "PriceCharting public page"
+PC_SOURCE = "PriceCharting"
 LANG_PREFIX = {"ja": "pokemon-japanese-", "ko": "pokemon-korean-", "zh": "pokemon-chinese-"}
+# The paid API's fields for the same grades as PC_FIELDS (see PriceChartingProvider).
+API_FIELDS = {"loose-price": "raw", "cib-price": 7, "new-price": 8, "graded-price": 9, "manual-only-price": 10}
+_API_PRODUCTS: dict[str, dict] = {}  # slug -> the API's product, from the last searches
+
+
+def _slugify(text: str) -> str:
+    import re
+    return re.sub(r"-+", "-", re.sub(r"[^a-z0-9&]+", "-", text.lower())).strip("-")
+
+
+def _api_slug(product: dict) -> str:
+    """'Pokemon Japanese Scarlet & Violet 151' + 'Pikachu [Master Ball] #25' ->
+    'pokemon-japanese-scarlet-&-violet-151/pikachu-master-ball-25', the shape of PriceCharting's own slugs."""
+    return f"{_slugify(product.get('console-name') or '')}/{_slugify(product.get('product-name') or '')}"
+
+
+def _api_search(q: str) -> list[str]:
+    """The paid API's search, as slugs. Its products carry their prices, so no page is read."""
+    _pace()
+    data = _get_json(f"{PC_BASE}/api/products", {"t": os.environ["PRICECHARTING_API_KEY"], "q": q})
+    slugs = []
+    for product in data.get("products") or []:
+        slug = _api_slug(product)
+        _API_PRODUCTS[slug] = product
+        slugs.append(slug)
+    return slugs
+
+
+def _api_prices(product: dict) -> dict:
+    return {grade: round(int(product[f]) / 100.0, 2) for f, grade in API_FIELDS.items() if product.get(f)}
+
+
+def _api_listing(slug: str) -> dict | None:
+    """(prices, url, title) for a slug from an API search; searched again if this process hasn't seen it."""
+    product = _API_PRODUCTS.get(slug)
+    if product is None:
+        _api_search(slug.replace("/", " ").replace("-", " "))
+        product = _API_PRODUCTS.get(slug)
+    if product is None:
+        return None
+    return {"prices": _api_prices(product), "url": f"{PC_BASE}/game/{product['id']}",
+            "title": f"{product.get('product-name')} ({product.get('console-name')})"}
+
+
+def listings_enabled() -> bool:
+    """Can cards outside the databases (Japanese, stamped printings) be priced from PriceCharting's listings?"""
+    return scraping_enabled() or bool(os.environ.get("PRICECHARTING_API_KEY"))
 
 
 def _get_html(url: str, params: dict | None = None) -> tuple[str, str]:
@@ -462,7 +529,11 @@ def pricecharting_lookup(name_en: str, number: str | None, language: str = "en",
     from urllib.parse import unquote
     import html as htmllib
 
+    use_pages = scraping_enabled()  # else the paid API: same matching, prices from its search results
+
     def search(q):
+        if not use_pages:
+            return _api_search(q)
         html, url = _get_html(f"{PC_BASE}/search-products", {"type": "prices", "q": q})
         if "/game/" in url:  # a unique match redirects straight to the card page
             return [unquote(url.split("/game/")[1].split("?")[0])]
@@ -510,14 +581,19 @@ def pricecharting_lookup(name_en: str, number: str | None, language: str = "en",
         return (stamp_hits(slug), generic, edition, overlap, -len(card))  # plain listing beats variants
     ranked = sorted(cands, key=score, reverse=True)
     best = ranked[0]
-    from urllib.parse import quote
-    page, final = _get_html(f"{PC_BASE}/game/{quote(best, safe='/')}")
-    prices = _pc_prices(page)
+    if use_pages:
+        from urllib.parse import quote
+        page, final = _get_html(f"{PC_BASE}/game/{quote(best, safe='/')}")
+        prices = _pc_prices(page)
+        title = re.search(r"<title>([^<|]+)", page)
+        title = title.group(1).strip() if title else best
+    else:
+        listing = _api_listing(best) or {}
+        prices, final, title = listing.get("prices"), listing.get("url"), listing.get("title")
     if not prices:
         return None
-    title = re.search(r"<title>([^<|]+)", page)
     console = best.split("/")[0]
-    return {"slug": best, "url": final, "prices": prices, "title": title.group(1).strip() if title else best,
+    return {"slug": best, "url": final, "prices": prices, "title": title,
             "set": console.removeprefix("pokemon-").replace("-", " ").title(), "ambiguous": len(cands) > 1,
             "options": [{"slug": s, "label": _printing_label(s)} for s in ranked[:6]],
             "stamp_matched": stamp_hits(best) > 0}
@@ -526,8 +602,14 @@ def pricecharting_lookup(name_en: str, number: str | None, language: str = "en",
 def pricecharting_listing(slug: str) -> dict | None:
     """Prices for one specific listing, e.g. the printing someone picked."""
     from urllib.parse import quote
-    if not scraping_enabled():
+    if not listings_enabled():
         return None
+    if not scraping_enabled():
+        try:
+            listing = _api_listing(slug)
+        except (httpx.HTTPError, ValueError, KeyError):
+            return None
+        return {"slug": slug, "url": listing["url"], "prices": listing["prices"]} if listing and listing["prices"] else None
     try:
         page, final = _get_html(f"{PC_BASE}/game/{quote(slug, safe='/')}")
     except httpx.HTTPError:
@@ -538,12 +620,12 @@ def pricecharting_listing(slug: str) -> dict | None:
 
 def priced_from_pricecharting(guess: dict) -> dict | None:
     """A card record (same shape as the database ones) for cards only PriceCharting covers, e.g. Japanese."""
-    if not scraping_enabled():
+    if not listings_enabled():
         return None
     try:
         pc = pricecharting_lookup(guess.get("name_en", ""), guess.get("number"), (guess.get("language") or "en").lower(),
                                   guess.get("set_name") or "", bool(guess.get("first_edition")), guess.get("stamp") or "")
-    except httpx.HTTPError:
+    except (httpx.HTTPError, ValueError, KeyError):
         return None
     if not pc:
         return None

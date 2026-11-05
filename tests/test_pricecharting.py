@@ -65,3 +65,33 @@ def test_a_cache_that_cant_be_written_never_fails_a_lookup(monkeypatch, tmp_path
     finally:
         tmp_path.chmod(0o700)
 
+
+
+def test_a_printing_the_card_isnt_is_another_card():
+    """The closest match for a plain 151 Pikachu was the Pokemon Together stamp, and for a plain Base Set
+    Charizard the 1st Edition: both are other printings' prices."""
+    together = {"product-name": "Pikachu [Pokemon Together] #25", "console-name": "Pokemon Scarlet & Violet 151"}
+    first = {"product-name": "Charizard [1st Edition] #4", "console-name": "Pokemon Base Set"}
+    assert not prices.is_same_card({"name": "Pikachu", "number": "25"}, together)
+    assert prices.is_same_card({"name": "Pikachu", "number": "25", "stamp": "Pokemon Together"}, together)
+    assert not prices.is_same_card({"name": "Charizard", "number": "4", "raw_variant": "holofoil"}, first)
+    assert prices.is_same_card({"name": "Charizard", "number": "4", "raw_variant": "1stEditionHolofoil"}, first)
+    assert prices.is_same_card({"name": "Mega Charizard X ex", "number": "23"},  # brackets naming the card itself are fine
+                               {"product-name": "Mega Charizard X ex [Mega Charizard X] #23", "console-name": "Pokemon Promo"})
+
+
+def test_when_the_closest_match_is_another_printing_the_result_list_is_searched(monkeypatch):
+    monkeypatch.setenv("PRICECHARTING_API_KEY", "k")
+    monkeypatch.setattr(prices, "_pace", lambda: None)
+    monkeypatch.setattr(prices, "_LISTINGS", {})
+    together = {"status": "success", "product-name": "Pikachu [Pokemon Together] #25",
+                "console-name": "Pokemon Scarlet & Violet 151", "manual-only-price": 59688}
+    products = [together,
+                {"product-name": "Pikachu #25", "console-name": "Pokemon Japanese Scarlet & Violet 151", "manual-only-price": 10600},
+                {"product-name": "Pikachu #25", "console-name": "Pokemon Some Other Set", "manual-only-price": 1},
+                {"product-name": "Pikachu #25", "console-name": "Pokemon Scarlet & Violet 151", "manual-only-price": 14250,
+                 "loose-price": 76}]
+    monkeypatch.setattr(prices, "_get_json", lambda url, params=None, **k: {"products": products} if url.endswith("/products") else together)
+    card = {"name": "Pikachu", "set": "151", "number": "25"}
+    assert prices.PriceChartingProvider().listing(card) == {10: 142.5, "raw": 0.76}
+    assert prices.PriceChartingProvider().listing({**card, "number": "26"}) is None

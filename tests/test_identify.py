@@ -1,3 +1,4 @@
+import pytest
 from gradeorskip.providers.prices import _split_number, identify_card
 
 
@@ -84,6 +85,7 @@ def test_pricecharting_page_parsing():
 
 
 def test_pricecharting_match_requires_language_and_number(monkeypatch):
+    monkeypatch.setenv("GRADEORSKIP_SCRAPE_PRICECHARTING", "1")  # the public-page backend
     from gradeorskip.providers import prices
     search = ('<a href="/game/pokemon-korean-mega-dream-ex/mega-gengar-ex-230">k</a>'
               '<a href="https://www.pricecharting.com/game/pokemon-japanese-mega-dream-ex/mega-gengar-ex-230">j</a>'
@@ -99,6 +101,7 @@ def test_pricecharting_match_requires_language_and_number(monkeypatch):
 
 
 def test_pricecharting_match_requires_the_name(monkeypatch):
+    monkeypatch.setenv("GRADEORSKIP_SCRAPE_PRICECHARTING", "1")  # the public-page backend
     """A number-only match once priced an Oricorio ex promo as M Blastoise ex #22."""
     from gradeorskip.providers import prices
     search = ('<a href="/game/pokemon-evolutions/m-blastoise-ex-22">b</a>'
@@ -129,12 +132,14 @@ def _mewtwo_site(monkeypatch):
 
 
 def test_stamp_picks_the_stamped_printing(monkeypatch):
+    monkeypatch.setenv("GRADEORSKIP_SCRAPE_PRICECHARTING", "1")  # the public-page backend
     prices = _mewtwo_site(monkeypatch)
     r = prices.pricecharting_lookup("Mewtwo", "056/172", "en", "Brilliant Stars", False, "Trick or Trade pumpkin")
     assert r["slug"] == "pokemon-trick-or-trade-2022/mewtwo-holo-56" and r["stamp_matched"]
 
 
 def test_no_stamp_prefers_the_plain_printing_and_offers_the_rest(monkeypatch):
+    monkeypatch.setenv("GRADEORSKIP_SCRAPE_PRICECHARTING", "1")  # the public-page backend
     prices = _mewtwo_site(monkeypatch)
     r = prices.pricecharting_lookup("Mewtwo", "056/172", "en", "Brilliant Stars")
     assert r["slug"] == "pokemon-brilliant-stars/mewtwo-56" and not r["stamp_matched"]
@@ -142,5 +147,53 @@ def test_no_stamp_prefers_the_plain_printing_and_offers_the_rest(monkeypatch):
 
 
 def test_unknown_stamp_is_not_claimed_as_matched(monkeypatch):
+    monkeypatch.setenv("GRADEORSKIP_SCRAPE_PRICECHARTING", "1")  # the public-page backend
     prices = _mewtwo_site(monkeypatch)
     assert not prices.pricecharting_lookup("Mewtwo", "56", "en", "Brilliant Stars", False, "Worlds 2022")["stamp_matched"]
+
+
+def _api_product(pid, console, name, **cents):
+    return {"id": pid, "console-name": console, "product-name": name, **{k.replace("_", "-"): v for k, v in cents.items()}}
+
+
+def test_paid_api_prices_japanese_cards_without_reading_pages(monkeypatch):
+    """gradeorskip.com can't read pages, so Japanese cards are matched and priced from the API's search."""
+    from gradeorskip.providers import prices
+    monkeypatch.setenv("GRADEORSKIP_SCRAPE_PRICECHARTING", "0")
+    monkeypatch.setenv("PRICECHARTING_API_KEY", "k")
+    monkeypatch.setattr(prices, "_pace", lambda: None)
+    monkeypatch.setattr(prices, "_get_html", lambda *a, **k: pytest.fail("read a page"))
+    products = [
+        _api_product("1", "Pokemon Japanese Scarlet & Violet 151", "Pikachu [Master Ball] #25", manual_only_price=53961),
+        _api_product("2", "Pokemon Korean Scarlet & Violet 151", "Pikachu #25", manual_only_price=999),
+        _api_product("3", "Pokemon Japanese Scarlet & Violet 151", "Pikachu #25",
+                     loose_price=301, new_price=7993, graded_price=8800, manual_only_price=10600),
+        _api_product("4", "Pokemon Japanese Scarlet & Violet 151", "Raichu #26", manual_only_price=1),
+    ]
+    queries = []
+    def fake_json(url, params=None, **kw):
+        assert url.endswith("/api/products") and params["t"] == "k"
+        queries.append(params["q"])
+        return {"status": "success", "products": products}
+    monkeypatch.setattr(prices, "_get_json", fake_json)
+
+    card = prices.priced_from_pricecharting({"name_en": "Pikachu", "name_printed": "ピカチュウ", "number": "025/165",
+                                             "language": "ja", "set_name": "Pokemon Card 151"})
+    assert card["pc_slug"] == "pokemon-japanese-scarlet-&-violet-151/pikachu-25"  # the plain printing, Japanese only
+    assert card["raw_price"] == 3.01 and card["pc_graded"] == {8: 79.93, 9: 88.0, 10: 106.0}
+    assert card["raw_url"] == "https://www.pricecharting.com/game/3"
+    assert [o["slug"].split("/")[1] for o in card["pc_options"]] == ["pikachu-25", "pikachu-master-ball-25"]
+    # The graded prices are this listing's, not whatever a fresh name search lands on first (the Master Ball).
+    assert prices.graded_prices(card)[0] == {8: 79.93, 9: 88.0, 10: 106.0}
+    # Picking another printing reads its prices from the API too.
+    assert prices.pricecharting_listing("pokemon-japanese-scarlet-&-violet-151/pikachu-master-ball-25")["prices"] == {10: 539.61}
+    assert queries and all("pokemon" in q for q in queries)
+
+
+def test_no_listings_without_a_key_or_page_reading(monkeypatch):
+    from gradeorskip.providers import prices
+    monkeypatch.setenv("GRADEORSKIP_SCRAPE_PRICECHARTING", "0")
+    monkeypatch.setenv("PRICECHARTING_API_KEY", "")
+    monkeypatch.setattr(prices, "_get_json", lambda *a, **k: pytest.fail("called the API"))
+    assert prices.priced_from_pricecharting({"name_en": "Pikachu", "number": "25", "language": "ja"}) is None
+    assert prices.pricecharting_listing("pokemon-japanese-x/pikachu-25") is None
