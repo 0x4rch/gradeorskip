@@ -109,12 +109,30 @@ function alignment(q) {
 // differs from it. Returns its rotated rectangle and outline in source pixels, or null.
 // Built from a real iPhone recording (2026-11-04): a full-art card on dark fabric, where the old
 // fixed guide pulled the phone in until the lens switched to macro and the photos went grainy.
+// Shrink in halving steps. One big jump (2160 px down to 160) lets the phone's browser skip
+// pixels, and a sharp fabric weave or foil sparkle turns into speckle that hides the card's
+// border (capture lab, 2026-11-05: a card found in 7% of checks, after 95-100% the day before).
+function shrinkInto(ctx, source, vis, W, H) {
+  const pool = shrinkInto.pool || (shrinkInto.pool = [document.createElement("canvas"), document.createElement("canvas")]);
+  let src = source, sx = vis.x, sy = vis.y, sw = vis.w, sh = vis.h, i = 0;
+  while (sw / 2 >= W * 1.5) {
+    const c = pool[i++ % 2], w = Math.round(sw / 2), h = Math.round(sh / 2);
+    c.width = w; c.height = h;
+    const g = c.getContext("2d");
+    g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high";
+    g.drawImage(src, sx, sy, sw, sh, 0, 0, w, h);
+    src = c; sx = 0; sy = 0; sw = w; sh = h;
+  }
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(src, sx, sy, sw, sh, 0, 0, W, H);
+}
+
 function findCard(source, vis) {
   const W = 160, H = Math.max(40, Math.round((W * vis.h) / vis.w));
   const cv = findCard.canvas || (findCard.canvas = document.createElement("canvas"));
   cv.width = W; cv.height = H;
   const ctx = cv.getContext("2d", { willReadFrequently: true });
-  ctx.drawImage(source, vis.x, vis.y, vis.w, vis.h, 0, 0, W, H);
+  shrinkInto(ctx, source, vis, W, H);
   const d = ctx.getImageData(0, 0, W, H).data;
   const N = W * H;
   const inRing = (r, c) => r < 4 || r >= H - 4 || c < 4 || c >= W - 4;
@@ -148,7 +166,9 @@ function findCard(source, vis) {
     }
     return out;
   };
-  mask = morph(morph(mask, (n) => n > 0), (n) => n === 9);
+  // Close gaps up to 2 px (a silver border close to the surface's colour, dark art on a dark mat).
+  const grow = (m) => morph(m, (n) => n > 0), shrink = (m) => morph(m, (n) => n === 9);
+  mask = shrink(shrink(grow(grow(mask))));
 
   // Largest connected region.
   const label = new Int32Array(N), stack = new Int32Array(N);
@@ -213,10 +233,11 @@ function findCard(source, vis) {
   const angle = (((deg % 90) + 135) % 90) - 45;
   const xs = rc.map((p) => p[0]), ys = rc.map((p) => p[1]);
   const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
-  const edge = 3;  // this close to the view's edge = cut off there (closing the mask blanks the outer 2 px)
+  const edge = 5;  // this close to the view's edge = cut off there (closing the mask blanks the outer 4 px)
   const sx = vis.w / W, sy = vis.h / H;
   return {
-    ok: ratio > 0.62 && ratio < 0.8 && bestArea / rect.area > 0.8,
+    ok: ratio > 0.6 && ratio < 0.82 && bestArea / rect.area > 0.72,
+    ratio, fill: bestArea / rect.area, threshold: T,  // why a card was or wasn't accepted (the capture lab logs these)
     tilt, angle,
     size: Math.min(sideA, sideB) / W,  // the card's short side as a share of the view's width
     cut: { left: x0 < edge, right: x1 > W - edge, top: y0 < edge, bottom: y1 > H - edge },
@@ -652,8 +673,9 @@ if (app) {
     if (found) {
       st.shift = st.quad ? card.quad.reduce((sum, p) => sum + Math.min(...st.quad.map((o) => Math.hypot(p[0] - o[0], p[1] - o[1]))), 0) / 4 / v.w : 99;
       st.quad = card.quad;
-    } else { st.quad = null; st.shift = 99; }
-    const steady = found ? st.shift <= (arming ? 0.03 : 0.02) : motion <= (arming ? 14 : MOTION_MAX);
+    } else { st.shift = 99; }  // keep the last outline: one missed check shouldn't restart "hold still"
+    // 2.5%: in the lab sharpness only fell away above about 2%, and the focus check catches blur anyway.
+    const steady = found ? st.shift <= (arming ? 0.035 : 0.025) : motion <= (arming ? 14 : MOTION_MAX);
     const close = lightOk && focused && steady && (found ? !fix : aligned >= CLOSE_ALIGN);
     st.samples.push({ t: Date.now(), a: +aligned.toFixed(2), s: Math.round(q.sharpness), m: +motion.toFixed(1),
                       b: Math.round(q.brightness), g: +(q.glare * 100).toFixed(2),

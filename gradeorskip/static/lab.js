@@ -21,7 +21,7 @@
     if (S) send("reopened");
     S = { id: rid(), side, video, t0: now(), started: new Date().toISOString(), ua: navigator.userAgent,
           screen: { w: innerWidth, h: innerHeight, dpr: devicePixelRatio }, stream: { ...stream },
-          ticks: [], snaps: [], still: null, lastSnap: -1e9, lastMsg: "" };
+          ticks: [], snaps: [], raws: [], still: null, lastSnap: -1e9, lastRaw: -1e9, lastMsg: "" };
   }
 
   function snap(x) {
@@ -45,6 +45,17 @@
     g.fillText(`${((now() - S.t0) / 1000).toFixed(1)}s ${x.msg}`.slice(0, 58), 4, h - 5);
     const at = now() - S.t0;
     cv.toBlob((b) => { if (S && b && S.snaps.length < 150) S.snaps.push({ t: at, blob: b }); }, "image/jpeg", 0.7);
+  }
+
+  function raw(x) {
+    const v = x.v, w = 480, h = Math.round((w * v.h) / v.w);
+    const cv = document.createElement("canvas");
+    cv.width = w; cv.height = h;
+    const g = cv.getContext("2d");
+    g.imageSmoothingQuality = "high";
+    g.drawImage(S.video, v.x, v.y, v.w, v.h, 0, 0, w, h);
+    const at = now() - S.t0;
+    cv.toBlob((b) => { if (S && b) S.raws.push({ t: at, blob: b }); }, "image/jpeg", 0.9);
   }
 
   function still(video) {
@@ -71,11 +82,13 @@
     if (s === S) S = null;
     if (!s) return;
     const fd = new FormData();
-    const { video, snaps, still: st, lastSnap, lastMsg, ...meta } = s;
+    const { video, snaps, raws, still: st, lastSnap, lastRaw, lastMsg, ...meta } = s;
     meta.end = end; meta.duration = now() - s.t0;
     meta.snapTimes = snaps.map((x) => x.t);
+    meta.rawTimes = raws.map((x) => x.t);
     fd.append("meta", JSON.stringify(meta));
     snaps.forEach((x, i) => fd.append("snap", x.blob, `snap_${i}.jpg`));
+    raws.forEach((x, i) => fd.append("raw", x.blob, `raw_${i}.jpg`));
     if (st) fd.append("still", st, "still.jpg");
     const ids = JSON.parse(sessionStorage.getItem("labSessions") || "[]");
     sessionStorage.setItem("labSessions", JSON.stringify([...ids, s.id].slice(-10)));
@@ -107,10 +120,13 @@
       S.ticks.push({ ...x.sample, t: t - S.t0, msg: x.msg, shown: x.shown, found: x.found, partial: !!x.partial, fix: x.fix, close: x.close, n: x.n,
                      lost: x.lost, zoom: x.zoom, peak: Math.round(x.peak || 0), focused: x.focused, steady: x.steady, shift: +(x.shift || 0).toFixed(4),
                      card: c ? { ok: c.ok, size: +c.size.toFixed(3), tilt: +c.tilt.toFixed(3), angle: +c.angle.toFixed(1), cut: c.cut,
+                                 ratio: c.ratio && +c.ratio.toFixed(3), fill: c.fill && +c.fill.toFixed(3), threshold: c.threshold,
                                  quad: c.quad.map((p) => p.map(Math.round)) } : null,
                      crop: x.crop && { x: Math.round(x.crop.x), y: Math.round(x.crop.y), w: Math.round(x.crop.w), h: Math.round(x.crop.h) } });
       if (S.ticks.length > 4000) S.ticks.shift();
       if (t - S.lastSnap > 900 || x.msg !== S.lastMsg) { S.lastSnap = t; S.lastMsg = x.msg; snap(x); }
+      // A card seen but rejected: keep a clean frame (no drawings) to replay the detector on later.
+      if (c && !c.ok && t - S.lastRaw > 1500 && S.raws.length < 40) { S.lastRaw = t; raw(x); }
       hud.textContent = hudText(x);
     },
     async shot({ auto, debug, video }) {

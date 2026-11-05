@@ -35,6 +35,8 @@ async def session(request: Request):
     (folder / "session.json").write_text(json.dumps(meta, indent=1))
     for i, snap in enumerate(form.getlist("snap")[:150]):
         (folder / f"snap_{i:03d}.jpg").write_bytes(await snap.read())
+    for i, raw in enumerate(form.getlist("raw")[:40]):  # clean frames where a card was seen but rejected
+        (folder / f"raw_{i:03d}.jpg").write_bytes(await raw.read())
     if (still := form.get("still")) is not None and not isinstance(still, str):
         (folder / "still.jpg").write_bytes(await still.read())
     await form.close()
