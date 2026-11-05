@@ -15,6 +15,7 @@ import json
 import os
 import re
 import statistics
+import threading
 import time
 from urllib.parse import quote
 
@@ -171,12 +172,41 @@ class CardLookup:
 
 # ---------------------------------------------------------- graded prices
 
+_MIN_GAP = 1.1  # PriceCharting allows one call a second and can revoke access beyond that
+_pace_lock = threading.Lock()
+_last_call = 0.0
+
+
+def _pace() -> None:
+    global _last_call
+    with _pace_lock:
+        time.sleep(max(0.0, _last_call + _MIN_GAP - time.monotonic()))
+        _last_call = time.monotonic()
+
+
+def is_same_card(card: dict, data: dict) -> bool:
+    """The API's search answers with its single closest match, even when that's another card, and a
+    wrong card's price is a made-up price. So the match must name this card and carry its number."""
+    if data.get("status") not in (None, "success"):
+        return False
+    title = re.sub(r"[^a-z0-9#]+", " ", (data.get("product-name") or "").lower())
+    console = (data.get("console-name") or "").lower()
+    words = re.findall(r"[a-z0-9]+", (card.get("name") or "").lower())
+    number = str(card.get("number") or "").lstrip("0").lower()
+    if not words or not number or not title or "pokemon" not in console:
+        return False
+    if (card.get("language") or "en") == "en" and any(w in console for w in ("japanese", "korean", "chinese")):
+        return False
+    return all(w in title.split() for w in words) and re.search(rf"#0*{re.escape(number)}\b", title) is not None
+
+
 class PriceChartingProvider:
     """Graded prices from PriceCharting's paid API (https://www.pricecharting.com/api-documentation).
 
-    Field mapping for trading cards, per their docs: loose = ungraded, cib = grade 7,
-    new = grade 8, graded = grade 9, box-only = grade 9.5, manual-only = PSA 10.
-    Prices are in pennies. UNTESTED: no key was available while building this.
+    Field mapping for trading cards: loose = ungraded, cib = grade 7, new = grade 8, graded =
+    grade 9, box-only = grade 9.5, manual-only = PSA 10. Prices are in pennies. Checked against
+    the live API on 2026-11-05: four cards matched and every price equalled PriceCharting's page.
+    Calls are paced to one a second, and a match that isn't this card counts as no price.
     """
     name = "pricecharting"
     FIELDS = {10: "manual-only-price", 9: "graded-price", 8: "new-price", 7: "cib-price"}
@@ -187,7 +217,10 @@ class PriceChartingProvider:
     def graded(self, card: dict) -> dict[int, float]:
         token = os.environ["PRICECHARTING_API_KEY"]
         q = f"pokemon {card['name']} {card.get('set') or ''} {card.get('number') or ''}".strip()
+        _pace()
         data = _get_json("https://www.pricecharting.com/api/product", {"t": token, "q": q})
+        if not is_same_card(card, data):
+            return {}
         out = {}
         for grade, fld in self.FIELDS.items():
             if data.get(fld):
