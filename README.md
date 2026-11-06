@@ -3,6 +3,7 @@
 **Should you pay to grade this Pokémon card?** Scan the front and back of a raw card and get a straight answer in dollars: grade it, skip it, or it's marginal, with the math shown.
 
 Free to self-host. Bring your own AI key, or run it without one.
+Don't want to self-host? Try it at [gradeorskip.com](https://gradeorskip.com). The first scan needs no sign-in.
 
 ![A real check: a near-perfect Psyduck that still isn't worth grading](docs/screenshot.png)
 
